@@ -1,21 +1,19 @@
-'use strict';
+import axios from 'axios';
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
+import { fileURLToPath } from 'url';
 
-const axios = require('axios');
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
+// ✅ Fix __dirname for ESM
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const AUDIO_DIR = path.join(__dirname, '..', '..', 'audio');
 
 /**
- * Converts `text` to speech using the MiniMax TTS API and saves the resulting
- * audio to the `audio/` directory.
- *
- * @param {string} text  Text to synthesise
- * @returns {Promise<string>}  Public path segment (e.g. "/audio/<filename>.mp3")
- *                             that Twilio can play via <Play>.
+ * ✅ Match server.js name
  */
-async function synthesize(text) {
+export async function synthesizeSpeech(text) {
   const apiUrl = process.env.MINIMAX_API_URL;
   const apiKey = process.env.MINIMAX_API_KEY;
   const groupId = process.env.MINIMAX_GROUP_ID;
@@ -47,24 +45,21 @@ async function synthesize(text) {
     responseType: 'json',
   });
 
-  // MiniMax returns audio as a hex-encoded string in `data.audio`
   const audioHex = response.data?.data?.audio;
   if (!audioHex) {
-    throw new Error(`MiniMax TTS returned no audio: ${JSON.stringify(response.data)}`);
+    throw new Error(`MiniMax TTS returned no audio`);
   }
 
   const audioBuffer = Buffer.from(audioHex, 'hex');
 
-  // Ensure audio directory exists
   if (!fs.existsSync(AUDIO_DIR)) {
     fs.mkdirSync(AUDIO_DIR, { recursive: true });
   }
 
   const filename = `tts_${crypto.randomUUID()}.mp3`;
   const filePath = path.join(AUDIO_DIR, filename);
+
   fs.writeFileSync(filePath, audioBuffer);
 
   return `/audio/${filename}`;
 }
-
-module.exports = { synthesize };
