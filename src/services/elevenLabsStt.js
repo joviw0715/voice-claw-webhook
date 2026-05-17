@@ -47,18 +47,15 @@ export async function transcribeAudio(recordingUrl) {
     },
   });
 
-  // Convert to Buffer (SDK expects Buffer, not Blob)
+  // Wrap in a File so the SDK's fetch-based multipart upload works correctly
   const audioBuffer = Buffer.from(response.data);
+  const audioFile = new File([audioBuffer], 'audio.wav', { type: 'audio/wav' });
 
-  const client = new ElevenLabsClient({ 
-    apiKey,
-    // 可选：增加超时时间
-    timeout: 120000, // 120秒
-  });
+  const client = new ElevenLabsClient({ apiKey });
 
   try {
     const result = await client.speechToText.convert({
-      file: audioBuffer,  // 使用 'file' 而不是 'audio'
+      file: audioFile,
       model_id: process.env.ELEVENLABS_STT_MODEL || 'scribe_v1',
     });
 
