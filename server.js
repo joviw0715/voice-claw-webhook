@@ -10,7 +10,7 @@ import { retrieveKnowledge } from "./services/rag.js";*/
 import { getContext, saveContext } from "./src/services/redisClient.js";
 import { getUserMemory, saveUserMemory } from "./src/services/redisClient.js";
 
-import { transcribeAudio } from "./src/services/azureStt.js";
+import { transcribeAudio } from "./src/services/elevenLabsStt.js";
 import { queryLLM } from "./src/services/openClawLlm.js";
 import { synthesizeSpeech } from "./src/services/minimaxTts.js";
 import { retrieveKnowledge } from "./src/services/qdrantClient.js";
