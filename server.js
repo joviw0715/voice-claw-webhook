@@ -1,12 +1,20 @@
 import express from "express";
 import bodyParser from "body-parser";
 
-import { getContext, saveContext } from "./services/context.js";
+/*import { getContext, saveContext } from "./services/context.js";
 import { getUserMemory, saveUserMemory } from "./services/memory.js";
 import { transcribeAudio } from "./services/stt.js";
 import { queryLLM } from "./services/llm.js";
 import { synthesizeSpeech } from "./services/tts.js";
-import { retrieveKnowledge } from "./services/rag.js";
+import { retrieveKnowledge } from "./services/rag.js";*/
+import { getContext, saveContext } from "./src/services/redisClient.js";
+import { getUserMemory, saveUserMemory } from "./src/services/redisClient.js";
+
+import { transcribeAudio } from "./src/services/azureStt.js";
+import { queryLLM } from "./src/services/openClawLlm.js";
+import { synthesizeSpeech } from "./src/services/minimaxTts.js";
+import { retrieveKnowledge } from "./src/services/qdrantClient.js";
+``
 
 const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
