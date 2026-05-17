@@ -1,0 +1,24 @@
+{
+  "name": "voice-claw-webhook",
+  "version": "1.0.0",
+  "description": "Twilio voice AI assistant webhook using Azure STT, OpenClaw LLM, MiniMax TTS, Redis, and Qdrant",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@qdrant/js-client-rest": "1.18.0",
+    "axios": "1.16.1",
+    "dotenv": "17.4.2",
+    "express": "5.2.1",
+    "ioredis": "5.10.1",
+    "microsoft-cognitiveservices-speech-sdk": "1.50.0",
+    "twilio": "6.0.2"
+  },
+  "devDependencies": {}
+}
