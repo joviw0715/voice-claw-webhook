@@ -36,6 +36,8 @@ app.post("/process", async (req, res) => {
     const phone = req.body.From;
     const recordingUrl = req.body.RecordingUrl + ".wav";
 
+    console.log("callSid:", callSid, "phone:", phone, "recordingUrl:", recordingUrl);
+
     let history = await getContext(callSid);
     let memory = await getUserMemory(phone);
 
