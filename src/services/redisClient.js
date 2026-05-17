@@ -1,6 +1,4 @@
-'use strict';
-
-const Redis = require('ioredis');
+import Redis from 'ioredis';
 
 let client;
 
