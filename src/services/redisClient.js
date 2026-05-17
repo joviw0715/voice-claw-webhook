@@ -107,15 +107,13 @@ async function saveUserMemory(phoneNumber, memory) {
 
 // ─────────────────────────────────────────────
 
-module.exports = {
-  // conversation
+
+export {
   getConversation,
   appendConversation,
   setConversation,
   getContext,
   saveContext,
-
-  // memory
   getUserMemory,
   updateUserMemory,
   saveUserMemory
