@@ -1,4 +1,4 @@
-import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
+import { ElevenLabsClient } from 'elevenlabs';
 import axios from 'axios';
 
 /**
