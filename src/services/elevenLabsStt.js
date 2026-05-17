@@ -1,8 +1,5 @@
 import { ElevenLabsClient } from 'elevenlabs';
 import axios from 'axios';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
 
 /**
  * Validate Twilio recording URL (SSRF protection)
@@ -41,8 +38,6 @@ export async function transcribeAudio(recordingUrl) {
   const safeUrl = validateTwilioRecordingUrl(recordingUrl);
   const wavUrl = safeUrl.endsWith('.wav') ? safeUrl : `${safeUrl}.wav`;
 
-  const tmpFile = path.join(os.tmpdir(), `twilio_${Date.now()}.wav`);
-
   const response = await axios.get(wavUrl, {
     responseType: 'arraybuffer',
     auth: {
@@ -51,22 +46,14 @@ export async function transcribeAudio(recordingUrl) {
     },
   });
 
-  fs.writeFileSync(tmpFile, Buffer.from(response.data));
+  const audioBlob = new Blob([response.data], { type: 'audio/wav' });
 
-  try {
-    const client = new ElevenLabsClient({ apiKey });
+  const client = new ElevenLabsClient({ apiKey });
 
-    const result = await client.speechToText.convert({
-      audio: fs.createReadStream(tmpFile),
-      model_id: process.env.ELEVENLABS_STT_MODEL || 'scribe_v1',
-    });
+  const result = await client.speechToText.convert({
+    audio: audioBlob,
+    model_id: process.env.ELEVENLABS_STT_MODEL || 'scribe_v1',
+  });
 
-    return result.text || '';
-  } finally {
-    try {
-      fs.unlinkSync(tmpFile);
-    } catch (err) {
-      console.error('Failed to delete temp file:', err);
-    }
-  }
+  return result.text || '';
 }
