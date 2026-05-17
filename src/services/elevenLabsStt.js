@@ -1,4 +1,4 @@
-import { ElevenLabsClient } from 'elevenlabs';
+import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
 import axios from 'axios';
 
 /**
@@ -20,7 +20,7 @@ function validateTwilioRecordingUrl(url) {
     throw new Error(`Invalid Twilio domain: ${parsed.hostname}`);
   }
 
-  // Reconstruct URL from validated parts (SSRF protection: HTTPS + .twilio.com allowlist)
+  // Reconstruct URL from validated parts
   const safeUrl = `https://${parsed.hostname}${parsed.pathname}${parsed.search}`;
   return safeUrl;
 }
@@ -38,6 +38,7 @@ export async function transcribeAudio(recordingUrl) {
   const safeUrl = validateTwilioRecordingUrl(recordingUrl);
   const wavUrl = safeUrl.endsWith('.wav') ? safeUrl : `${safeUrl}.wav`;
 
+  // Download audio from Twilio with authentication
   const response = await axios.get(wavUrl, {
     responseType: 'arraybuffer',
     auth: {
@@ -46,14 +47,38 @@ export async function transcribeAudio(recordingUrl) {
     },
   });
 
-  const audioBlob = new Blob([response.data], { type: 'audio/wav' });
+  // Convert to Buffer (SDK expects Buffer, not Blob)
+  const audioBuffer = Buffer.from(response.data);
 
-  const client = new ElevenLabsClient({ apiKey });
-
-  const result = await client.speechToText.convert({
-    audio: audioBlob,
-    model_id: process.env.ELEVENLABS_STT_MODEL || 'scribe_v1',
+  const client = new ElevenLabsClient({ 
+    apiKey,
+    // 可选：增加超时时间
+    timeout: 120000, // 120秒
   });
 
-  return result.text || '';
+  try {
+    const result = await client.speechToText.convert({
+      file: audioBuffer,  // 使用 'file' 而不是 'audio'
+      model_id: process.env.ELEVENLABS_STT_MODEL || 'scribe_v1',
+    });
+
+    return result.text || '';
+  } catch (error) {
+    // 详细错误处理
+    console.error('ElevenLabs STT Error:', {
+      status: error.status,
+      message: error.message,
+      body: error.body,
+    });
+    
+    if (error.status === 401) {
+      throw new Error('Invalid ElevenLabs API key');
+    } else if (error.status === 413) {
+      throw new Error('Audio file too large (max 25MB)');
+    } else if (error.status === 415) {
+      throw new Error('Unsupported audio format. Use WAV, MP3, FLAC, or OGG');
+    } else {
+      throw new Error(`Transcription failed: ${error.message}`);
+    }
+  }
 }
