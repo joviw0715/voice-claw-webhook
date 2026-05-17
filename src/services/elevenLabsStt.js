@@ -1,4 +1,4 @@
-import { ElevenLabsClient } from 'elevenlabs';
+import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
 import axios from 'axios';
 
 /**
@@ -47,22 +47,22 @@ export async function transcribeAudio(recordingUrl) {
     },
   });
 
-  // Wrap in a Blob so the SDK's fetch-based multipart upload works correctly.
-  // Blob is available in Node.js 18+; File is only guaranteed in Node.js 20+.
+  // Buffer is natively supported by the official SDK's multipart upload
   const audioBuffer = Buffer.from(response.data);
-  const audioFile = new Blob([audioBuffer], { type: 'audio/wav' });
 
   const client = new ElevenLabsClient({ apiKey });
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 120000);
+    const timeoutId = setTimeout(() => {
+      controller.abort(new Error('ElevenLabs STT request timed out after 120s'));
+    }, 120000);
 
     let result;
     try {
       result = await client.speechToText.convert(
         {
-          file: audioFile,
+          file: audioBuffer,
           model_id: process.env.ELEVENLABS_STT_MODEL || 'scribe_v1',
         },
         { abortSignal: controller.signal },
