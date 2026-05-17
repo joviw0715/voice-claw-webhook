@@ -1,4 +1,4 @@
-import { ElevenLabsClient } from 'elevenlabs';
+import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
 import axios from 'axios';
 
 /**
@@ -47,20 +47,29 @@ export async function transcribeAudio(recordingUrl) {
     },
   });
 
-  // Convert to Buffer (SDK expects Buffer, not Blob)
+  // Buffer is natively supported by the official SDK's multipart upload
   const audioBuffer = Buffer.from(response.data);
 
-  const client = new ElevenLabsClient({ 
-    apiKey,
-    // 可选：增加超时时间
-    timeout: 120000, // 120秒
-  });
+  const client = new ElevenLabsClient({ apiKey });
 
   try {
-    const result = await client.speechToText.convert({
-      file: audioBuffer,  // 使用 'file' 而不是 'audio'
-      model_id: process.env.ELEVENLABS_STT_MODEL || 'scribe_v1',
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort(new Error('ElevenLabs STT request timed out after 120s'));
+    }, 120000);
+
+    let result;
+    try {
+      result = await client.speechToText.convert(
+        {
+          file: audioBuffer,
+          model_id: process.env.ELEVENLABS_STT_MODEL || 'scribe_v1',
+        },
+        { abortSignal: controller.signal },
+      );
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     return result.text || '';
   } catch (error) {
