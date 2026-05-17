@@ -47,17 +47,29 @@ export async function transcribeAudio(recordingUrl) {
     },
   });
 
-  // Wrap in a File so the SDK's fetch-based multipart upload works correctly
+  // Wrap in a Blob so the SDK's fetch-based multipart upload works correctly.
+  // Blob is available in Node.js 18+; File is only guaranteed in Node.js 20+.
   const audioBuffer = Buffer.from(response.data);
-  const audioFile = new File([audioBuffer], 'audio.wav', { type: 'audio/wav' });
+  const audioFile = new Blob([audioBuffer], { type: 'audio/wav' });
 
   const client = new ElevenLabsClient({ apiKey });
 
   try {
-    const result = await client.speechToText.convert({
-      file: audioFile,
-      model_id: process.env.ELEVENLABS_STT_MODEL || 'scribe_v1',
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000);
+
+    let result;
+    try {
+      result = await client.speechToText.convert(
+        {
+          file: audioFile,
+          model_id: process.env.ELEVENLABS_STT_MODEL || 'scribe_v1',
+        },
+        { abortSignal: controller.signal },
+      );
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     return result.text || '';
   } catch (error) {
