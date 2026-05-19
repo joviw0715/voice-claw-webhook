@@ -46,6 +46,9 @@ export async function synthesizeSpeech(text) {
     timeout: 15000,
   });
 
+  console.log('MiniMax response status:', response.status);
+  console.log('MiniMax response data:', JSON.stringify(response.data, null, 2));
+
   const audioHex = response.data?.data?.audio;
   if (!audioHex) {
     console.error('MiniMax TTS full response:', JSON.stringify(response.data, null, 2));
