@@ -63,13 +63,21 @@ export async function retrieveKnowledge(query, topK = 3) {
 
   const vector = await getEmbedding(query);
 
-  const results = await getClient().search(collection, {
-    vector,
-    limit: topK,
-    with_payload: true,
-  });
+  try {
+    const results = await getClient().search(collection, {
+      vector,
+      limit: topK,
+      with_payload: true,
+    });
 
-  return results
-    .map((hit) => hit.payload?.content || '')
-    .filter(Boolean);
+    return results
+      .map((hit) => hit.payload?.content || '')
+      .filter(Boolean);
+  } catch (err) {
+    if (err?.status === 404) {
+      console.warn(`Qdrant collection "${collection}" not found — skipping RAG`);
+      return [];
+    }
+    throw err;
+  }
 }
