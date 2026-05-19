@@ -10,18 +10,22 @@ function getClient() {
     const rawUrl = process.env.QDRANT_URL || 'http://localhost:6333';
     const apiKey = process.env.QDRANT_API_KEY || undefined;
 
-    // The Qdrant JS client defaults to port 6333 when no port is in the URL.
-    // For HTTPS public endpoints (port 443) we must specify the port explicitly.
+    // Pass host/port/https separately — QdrantClient's URL parser strips the
+    // default HTTPS port (443) making it fall back to 6333.
     const parsed = new URL(rawUrl);
-    if (!parsed.port) {
-      parsed.port = parsed.protocol === 'https:' ? '443' : '6333';
-    }
-    const url = parsed.toString();
+    const isHttps = parsed.protocol === 'https:';
+    const port = parsed.port ? parseInt(parsed.port) : (isHttps ? 443 : 6333);
 
-    console.log('qdrant url:', url);
+    console.log('qdrant host:', parsed.hostname, 'port:', port, 'https:', isHttps);
     console.log('qdrant api key:', apiKey);
 
-    qdrantClient = new QdrantClient({ url, apiKey, checkCompatibility: false });
+    qdrantClient = new QdrantClient({
+      host: parsed.hostname,
+      port,
+      https: isHttps,
+      apiKey,
+      checkCompatibility: false,
+    });
   }
   return qdrantClient;
 }
