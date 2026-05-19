@@ -63,7 +63,7 @@ export async function transcribeAudio(recordingUrl) {
       result = await client.speechToText.convert(
         {
           file: audioBuffer,
-          model_id: process.env.ELEVENLABS_STT_MODEL || 'scribe_v1',
+          modelId: process.env.ELEVENLABS_STT_MODEL || 'scribe_v1',
         },
         { abortSignal: controller.signal },
       );
