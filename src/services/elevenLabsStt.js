@@ -59,6 +59,7 @@ export async function transcribeAudio(recordingUrl) {
     }, 120000);
 
     let result;
+    console.log("result:", result);
     try {
       result = await client.speechToText.convert(
         {
