@@ -61,13 +61,17 @@ export async function transcribeAudio(recordingUrl) {
     let result;
     console.log("result:", result);
     try {
-      result = await client.speechToText.convert(
+      //result = await client.speechToText.convert(
         {
           file: audioBuffer,
           modelId: process.env.ELEVENLABS_STT_MODEL || 'scribe_v1',
         },
         { abortSignal: controller.signal },
       );
+      // After the conversion, add:
+      console.log("Full result object:", JSON.stringify(result, null, 2));
+      console.log("Result type:", typeof result);
+      console.log("Result keys:", result ? Object.keys(result) : 'null');
     } finally {
       clearTimeout(timeoutId);
     }
