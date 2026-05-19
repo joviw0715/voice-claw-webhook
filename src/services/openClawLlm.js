@@ -7,6 +7,8 @@ const FREE_MODELS = [
   'deepseek/deepseek-v4-flash:free',
   'meta-llama/llama-3.3-70b-instruct:free',
   'google/gemma-4-31b-it:free',
+  'nvidia/nemotron-3-super-120b-a12b:free',
+  'nousresearch/hermes-3-llama-3.1-405b:free',
 ];
 
 async function callOpenRouter(apiKey, model, payload) {
@@ -42,9 +44,13 @@ export async function queryLLM(messages, systemPrompt) {
       return await callOpenRouter(apiKey, model, payload);
     } catch (err) {
       const status = err.response?.status;
+      const retryAfter = err.response?.data?.metadata?.retry_after_seconds;
       console.warn(`OpenRouter ${model} failed (${status}):`, JSON.stringify(err.response?.data?.error));
       if (status === 429 || status === 404) {
         lastErr = err;
+        if (retryAfter) {
+          await new Promise(r => setTimeout(r, retryAfter * 1000));
+        }
         continue;
       }
       throw err;
