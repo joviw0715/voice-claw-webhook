@@ -23,6 +23,9 @@ export async function queryLLM(messages, systemPrompt) {
       'Content-Type': 'application/json',
     },
     timeout: 10000,
+  }).catch(err => {
+    console.error('OpenRouter error:', JSON.stringify(err.response?.data, null, 2));
+    throw err;
   });
 
   return response.data.choices[0].message.content;
