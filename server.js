@@ -1,13 +1,18 @@
 import 'dotenv/config';
 import express from "express";
+import { fileURLToPath } from "url";
+import path from "path";
 import { getContext, saveContext } from "./src/services/redisClient.js";
 import { getUserMemory } from "./src/services/redisClient.js";
 import { queryLLM } from "./src/services/openClawLlm.js";
 import { synthesizeSpeech } from "./src/services/minimaxTts.js";
 import { retrieveKnowledge } from "./src/services/qdrantClient.js";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 const app = express();
 app.use(express.urlencoded({ extended: false }));
+app.use('/audio', express.static(path.join(__dirname, 'audio')));
 
 const LANGUAGE = process.env.TWILIO_LANGUAGE || 'zh-CN';
 const BASE_URL = (process.env.BASE_URL || '').replace(/\/$/, '');
