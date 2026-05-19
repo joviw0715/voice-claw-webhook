@@ -59,9 +59,9 @@ export async function transcribeAudio(recordingUrl) {
     }, 120000);
 
     let result;
-    console.log("result:", result);
+    //console.log("result:", result);
     try {
-      //result = await client.speechToText.convert(
+      result = await client.speechToText.convert(
         {
           file: audioBuffer,
           modelId: process.env.ELEVENLABS_STT_MODEL || 'scribe_v1',
