@@ -8,7 +8,9 @@ let qdrantClient;
 function getClient() {
   if (!qdrantClient) {
     const url = process.env.QDRANT_URL || 'http://localhost:6333';
+    console.log("qdrant url:", url);
     const apiKey = process.env.QDRANT_API_KEY || undefined;
+    console.log("qdrant api key:", apiKey);
     qdrantClient = new QdrantClient({ url, apiKey, checkCompatibility: false });
   }
   return qdrantClient;
