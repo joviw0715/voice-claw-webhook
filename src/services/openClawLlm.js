@@ -4,7 +4,7 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 export async function queryLLM(messages, systemPrompt) {
   const apiKey = process.env.OPENROUTER_API_KEY;
-  const model = process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini';
+  const model = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.1-8b-instruct:free';
 
   if (!apiKey) {
     throw new Error('OPENROUTER_API_KEY is not set');
