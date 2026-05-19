@@ -4,55 +4,56 @@ import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 
-// ✅ Fix __dirname for ESM
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const AUDIO_DIR = path.join(__dirname, '..', '..', 'audio');
 
-/**
- * ✅ Match server.js name
- */
 export async function synthesizeSpeech(text) {
-  const apiUrl = process.env.MINIMAX_API_URL;
   const apiKey = process.env.MINIMAX_API_KEY;
-  const groupId = process.env.MINIMAX_GROUP_ID;
   const voiceId = process.env.MINIMAX_VOICE_ID || 'male-qn-qingse';
+  const model = process.env.MINIMAX_MODEL || 'speech-2.8-hd';
 
-  if (!apiUrl || !apiKey) {
-    throw new Error(`MiniMax config missing — MINIMAX_API_URL=${!!apiUrl} MINIMAX_API_KEY=${!!apiKey}`);
+  if (!apiKey) {
+    throw new Error('MINIMAX_API_KEY is not set');
   }
 
   const payload = {
+    model,
     text,
-    model: 'speech-01',
-    voice_id: voiceId,
-    speed: 1.0,
-    vol: 1.0,
-    pitch: 0,
-    audio_sample_rate: 32000,
-    bitrate: 128000,
-    format: 'mp3',
+    stream: false,
+    voice_setting: {
+      voice_id: voiceId,
+      speed: 1,
+      vol: 1,
+      pitch: 0,
+    },
+    audio_setting: {
+      sample_rate: 32000,
+      bitrate: 128000,
+      format: 'mp3',
+      channel: 1,
+    },
+    output_format: 'hex',
   };
 
-  const url = groupId ? `${apiUrl}?GroupId=${groupId}` : apiUrl;
-
-  const response = await axios.post(url, payload, {
+  const response = await axios.post('https://api.minimax.io/v1/t2a_v2', payload, {
     headers: {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
-    responseType: 'json',
-    timeout: 15000,
+    timeout: 30000,
   });
 
-  console.log('MiniMax response status:', response.status);
-  console.log('MiniMax response data:', JSON.stringify(response.data, null, 2));
+  const baseResp = response.data?.base_resp;
+  if (baseResp && baseResp.status_code !== 0) {
+    throw new Error(`MiniMax TTS error ${baseResp.status_code}: ${baseResp.status_msg}`);
+  }
 
   const audioHex = response.data?.data?.audio;
   if (!audioHex) {
-    console.error('MiniMax TTS full response:', JSON.stringify(response.data, null, 2));
-    throw new Error(`MiniMax TTS returned no audio`);
+    console.error('MiniMax unexpected response:', JSON.stringify(response.data, null, 2));
+    throw new Error('MiniMax TTS returned no audio');
   }
 
   const audioBuffer = Buffer.from(audioHex, 'hex');
@@ -63,7 +64,6 @@ export async function synthesizeSpeech(text) {
 
   const filename = `tts_${crypto.randomUUID()}.mp3`;
   const filePath = path.join(AUDIO_DIR, filename);
-
   fs.writeFileSync(filePath, audioBuffer);
 
   const baseUrl = (process.env.BASE_URL || '').replace(/\/$/, '');
