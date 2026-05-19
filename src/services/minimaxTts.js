@@ -48,6 +48,7 @@ export async function synthesizeSpeech(text) {
 
   const audioHex = response.data?.data?.audio;
   if (!audioHex) {
+    console.error('MiniMax TTS full response:', JSON.stringify(response.data, null, 2));
     throw new Error(`MiniMax TTS returned no audio`);
   }
 
