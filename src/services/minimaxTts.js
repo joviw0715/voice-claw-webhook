@@ -20,7 +20,7 @@ export async function synthesizeSpeech(text) {
   const voiceId = process.env.MINIMAX_VOICE_ID || 'male-qn-qingse';
 
   if (!apiUrl || !apiKey) {
-    throw new Error('MINIMAX_API_URL or MINIMAX_API_KEY is not set');
+    throw new Error(`MiniMax config missing — MINIMAX_API_URL=${!!apiUrl} MINIMAX_API_KEY=${!!apiKey}`);
   }
 
   const payload = {
