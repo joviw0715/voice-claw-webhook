@@ -1,25 +1,17 @@
+import 'dotenv/config';
 import express from "express";
-import bodyParser from "body-parser";
-
-/*import { getContext, saveContext } from "./services/context.js";
-import { getUserMemory, saveUserMemory } from "./services/memory.js";
-import { transcribeAudio } from "./services/stt.js";
-import { queryLLM } from "./services/llm.js";
-import { synthesizeSpeech } from "./services/tts.js";
-import { retrieveKnowledge } from "./services/rag.js";*/
 import { getContext, saveContext } from "./src/services/redisClient.js";
-import { getUserMemory, saveUserMemory } from "./src/services/redisClient.js";
-
+import { getUserMemory } from "./src/services/redisClient.js";
 import { transcribeAudio } from "./src/services/elevenLabsStt.js";
 import { queryLLM } from "./src/services/openClawLlm.js";
 import { synthesizeSpeech } from "./src/services/minimaxTts.js";
 import { retrieveKnowledge } from "./src/services/qdrantClient.js";
 
 const app = express();
-app.use(bodyParser.urlencoded({ extended: false }));
+app.use(express.urlencoded({ extended: false }));
 
 // Entry: Twilio call
-app.post("/voice", (req, res) => {
+app.post("/voice", (_req, res) => {
   res.type("text/xml");
   res.send(`
 <Response>
@@ -39,28 +31,24 @@ app.post("/process", async (req, res) => {
     console.log("callSid:", callSid, "phone:", phone, "recordingUrl:", recordingUrl);
 
     let history = await getContext(callSid);
-    let memory = await getUserMemory(phone);
+    const memory = await getUserMemory(phone);
 
     const userText = await transcribeAudio(recordingUrl);
-
     const knowledge = await retrieveKnowledge(userText);
 
     history.push({ role: "user", content: userText });
 
-    // limit context
     if (history.length > 10) {
       history = history.slice(-10);
     }
 
-    const systemPrompt = `
-You are a helpful voice assistant.
+    const systemPrompt = `You are a helpful voice assistant.
 
 User memory:
 ${JSON.stringify(memory)}
 
 Knowledge:
-${knowledge}
-`;
+${knowledge.join('\n')}`;
 
     const reply = await queryLLM([
       { role: "system", content: systemPrompt },
@@ -68,9 +56,7 @@ ${knowledge}
     ]);
 
     history.push({ role: "assistant", content: reply });
-
     await saveContext(callSid, history);
-    await saveUserMemory(phone, memory);
 
     const audioUrl = await synthesizeSpeech(reply);
 

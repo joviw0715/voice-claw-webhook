@@ -43,6 +43,7 @@ export async function synthesizeSpeech(text) {
       'Content-Type': 'application/json',
     },
     responseType: 'json',
+    timeout: 15000,
   });
 
   const audioHex = response.data?.data?.audio;
@@ -61,5 +62,6 @@ export async function synthesizeSpeech(text) {
 
   fs.writeFileSync(filePath, audioBuffer);
 
-  return `/audio/${filename}`;
+  const baseUrl = (process.env.BASE_URL || '').replace(/\/$/, '');
+  return `${baseUrl}/audio/${filename}`;
 }

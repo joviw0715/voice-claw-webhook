@@ -22,7 +22,7 @@ export async function queryLLM(messages, systemPrompt) {
     headers['Authorization'] = `Bearer ${apiKey}`;
   }
 
-  const response = await axios.post(apiUrl, payload, { headers });
+  const response = await axios.post(apiUrl, payload, { headers, timeout: 10000 });
 
   const data = response.data;
 
