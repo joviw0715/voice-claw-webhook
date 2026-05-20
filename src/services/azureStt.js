@@ -66,7 +66,7 @@ export async function transcribeAudio(recordingUrl) {
 function recognizeFromFile(key, region, filePath) {
   return new Promise((resolve, reject) => {
     const speechConfig = sdk.SpeechConfig.fromSubscription(key, region);
-    speechConfig.speechRecognitionLanguage = 'zh-CN';
+    speechConfig.speechRecognitionLanguage = process.env.AZURE_SPEECH_LANGUAGE || 'zh-HK';
 
     const audioConfig = sdk.AudioConfig.fromWavFileInput(
       fs.readFileSync(filePath)

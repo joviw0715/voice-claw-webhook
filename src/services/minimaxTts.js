@@ -11,8 +11,9 @@ const AUDIO_DIR = path.join(__dirname, '..', '..', 'audio');
 
 export async function synthesizeSpeech(text) {
   const apiKey = process.env.MINIMAX_API_KEY;
-  const voiceId = process.env.MINIMAX_VOICE_ID || 'male-qn-qingse';
-  const model = process.env.MINIMAX_MODEL || 'speech-2.8-hd';
+  const voiceId = process.env.MINIMAX_VOICE_ID || 'Gentle_grace';
+  const model = process.env.MINIMAX_MODEL || 'speech-02-turbo';
+  const language = process.env.MINIMAX_LANGUAGE || 'Cantonese';
 
   if (!apiKey) {
     throw new Error('MINIMAX_API_KEY is not set');
@@ -22,10 +23,11 @@ export async function synthesizeSpeech(text) {
     model,
     text,
     stream: false,
+    language_boost: language,
     voice_setting: {
       voice_id: voiceId,
-      speed: 1,
-      vol: 1,
+      speed: 1.0,
+      vol: 1.0,
       pitch: 0,
     },
     audio_setting: {
