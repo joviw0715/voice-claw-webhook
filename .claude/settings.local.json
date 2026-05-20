@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -H \"api-key: jPQG2z8XY1TpK953vou7sMLJ6diNh04f\" \"https://qdrant1.zeabur.app/collections\")"
+    ]
+  }
+}

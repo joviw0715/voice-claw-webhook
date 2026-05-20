@@ -7,6 +7,7 @@ import { getUserMemory } from "./src/services/redisClient.js";
 import { queryLLM } from "./src/services/openClawLlm.js";
 import { synthesizeSpeech } from "./src/services/minimaxTts.js";
 import { retrieveKnowledge } from "./src/services/qdrantClient.js";
+import { transcribeAudio } from "./src/services/azureStt.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -22,14 +23,14 @@ function log(callSid, step, detail = '') {
   console.log(`[${ts}] [${callSid}] ${step}${detail ? ' — ' + detail : ''}`);
 }
 
-function gatherTwiml(audioUrl = null) {
+function recordTwiml(audioUrl = null) {
   const play = audioUrl ? `<Play>${audioUrl}</Play>` : '';
   return `
 <Response>
-  <Gather input="speech" action="${BASE_URL}/process" method="POST"
-         language="${LANGUAGE}" speechTimeout="auto" timeout="5">
-    ${play}
-  </Gather>
+  ${play}
+  <Record action="${BASE_URL}/process" method="POST"
+          maxLength="30" timeout="3" playBeep="false"
+          trim="trim-silence" />
   <Redirect>${BASE_URL}/voice</Redirect>
 </Response>`.trim();
 }
@@ -41,10 +42,10 @@ app.post("/voice", (req, res) => {
   res.type("text/xml");
   res.send(`
 <Response>
-  <Gather input="speech" action="${BASE_URL}/process" method="POST"
-         language="${LANGUAGE}" speechTimeout="auto" timeout="5">
-    <Say language="${LANGUAGE}">你好，请说话。</Say>
-  </Gather>
+  <Say language="${LANGUAGE}">你好，请说话。</Say>
+  <Record action="${BASE_URL}/process" method="POST"
+          maxLength="30" timeout="3" playBeep="false"
+          trim="trim-silence" />
   <Redirect>${BASE_URL}/voice</Redirect>
 </Response>`);
 });
@@ -53,20 +54,44 @@ app.post("/voice", (req, res) => {
 app.post("/process", async (req, res) => {
   const callSid = req.body.CallSid || 'unknown';
   const phone = req.body.From || 'unknown';
-  const userText = (req.body.SpeechResult || '').trim();
+  const recordingUrl = req.body.RecordingUrl || '';
   const start = Date.now();
 
   log(callSid, '▶  PROCESS START', `from=${phone}`);
 
-  // No speech detected — loop back
-  if (!userText) {
-    log(callSid, '⚠  NO SPEECH detected, looping back');
+  // No recording — loop back
+  if (!recordingUrl) {
+    log(callSid, '⚠  NO RECORDING received, looping back');
     res.type("text/xml");
     res.send(`<Response><Redirect>${BASE_URL}/voice</Redirect></Response>`);
     return;
   }
 
-  log(callSid, '3/6 STT    ✓ (Twilio)', `"${userText}"`);
+  // Transcribe with Azure STT
+  log(callSid, '3/6 STT    transcribing with Azure', `url=${recordingUrl}`);
+  let userText;
+  try {
+    const t1 = Date.now();
+    userText = await transcribeAudio(recordingUrl);
+    log(callSid, '3/6 STT    ✓ (Azure)', `"${userText}" (${Date.now() - t1}ms)`);
+  } catch (err) {
+    log(callSid, '❌ STT ERROR', err.message);
+    res.type("text/xml");
+    res.send(`
+<Response>
+  <Say language="${LANGUAGE}">抱歉，语音识别失败，请再试一次。</Say>
+  <Redirect>${BASE_URL}/voice</Redirect>
+</Response>`);
+    return;
+  }
+
+  // No speech detected — loop back
+  if (!userText || !userText.trim()) {
+    log(callSid, '⚠  NO SPEECH detected in recording, looping back');
+    res.type("text/xml");
+    res.send(`<Response><Redirect>${BASE_URL}/voice</Redirect></Response>`);
+    return;
+  }
 
   try {
     // 1. Load session context
@@ -117,7 +142,7 @@ ${knowledge.join('\n')}`;
 
     // Play response then immediately start listening again
     res.type("text/xml");
-    res.send(gatherTwiml(audioUrl));
+    res.send(recordTwiml(audioUrl));
 
   } catch (err) {
     log(callSid, '❌ ERROR', `${err.message} (after ${Date.now() - start}ms)`);

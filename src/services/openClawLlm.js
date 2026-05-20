@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+// Support both SAP Hyperspace LiteLLM proxy and OpenRouter
+const LLM_BASE_URL = process.env.LLM_BASE_URL || 'https://openrouter.ai/api/v1/chat/completions';
 
 // Free models to try in order — falls back if one is rate-limited
 const FREE_MODELS = [
@@ -11,23 +12,30 @@ const FREE_MODELS = [
   'nousresearch/hermes-3-llama-3.1-405b:free',
 ];
 
-async function callOpenRouter(apiKey, model, payload) {
-  const response = await axios.post(OPENROUTER_URL, { ...payload, model }, {
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
+async function callLLM(apiKey, model, payload) {
+  const headers = {
+    'Content-Type': 'application/json',
+  };
+
+  // Always include Authorization header if apiKey is provided
+  if (apiKey) {
+    headers['Authorization'] = `Bearer ${apiKey}`;
+  }
+
+  const response = await axios.post(LLM_BASE_URL, { ...payload, model }, {
+    headers,
     timeout: 15000,
   });
   return response.data.choices[0].message.content;
 }
 
 export async function queryLLM(messages, systemPrompt) {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  const preferredModel = process.env.OPENROUTER_MODEL;
+  // Support both LLM_API_KEY (for SAP proxy) and OPENROUTER_API_KEY (legacy)
+  const apiKey = process.env.LLM_API_KEY || process.env.OPENROUTER_API_KEY;
+  const preferredModel = process.env.LLM_MODEL || process.env.OPENROUTER_MODEL;
 
   if (!apiKey) {
-    throw new Error('OPENROUTER_API_KEY is not set');
+    throw new Error('LLM_API_KEY (or OPENROUTER_API_KEY) is not set');
   }
 
   const payload = {
@@ -41,11 +49,11 @@ export async function queryLLM(messages, systemPrompt) {
   let lastErr;
   for (const model of models) {
     try {
-      return await callOpenRouter(apiKey, model, payload);
+      return await callLLM(apiKey, model, payload);
     } catch (err) {
       const status = err.response?.status;
       const retryAfter = err.response?.data?.metadata?.retry_after_seconds;
-      console.warn(`OpenRouter ${model} failed (${status}):`, JSON.stringify(err.response?.data?.error));
+      console.warn(`LLM ${model} failed (${status}):`, JSON.stringify(err.response?.data?.error));
       if (status === 429 || status === 404) {
         lastErr = err;
         if (retryAfter) {
