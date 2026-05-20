@@ -10,6 +10,18 @@ const OPENCLAW_TOKEN = process.env.OPENCLAW_TOKEN || '';
  * @returns {string} The assistant's reply
  */
 export async function queryLLM(messages, sessionId) {
+  const endpoint = `${OPENCLAW_URL}/v1/chat/completions`;
+
+  console.log('[OpenClaw] Request details:', {
+    endpoint,
+    sessionId,
+    tokenSet: !!OPENCLAW_TOKEN,
+    tokenPrefix: OPENCLAW_TOKEN ? OPENCLAW_TOKEN.slice(0, 8) + '...' : '(empty)',
+    OPENCLAW_URL,
+    messageCount: messages.length,
+    messages: JSON.stringify(messages.map(m => ({ role: m.role, content: m.content?.slice(0, 50) }))),
+  });
+
   if (!OPENCLAW_TOKEN) {
     throw new Error('OPENCLAW_TOKEN is not set');
   }
@@ -27,7 +39,7 @@ export async function queryLLM(messages, sessionId) {
 
   try {
     const response = await axios.post(
-      `${OPENCLAW_URL}/v1/chat/completions`,
+      endpoint,
       clawPayload,
       {
         headers: {
