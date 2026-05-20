@@ -17,6 +17,8 @@ app.use('/audio', express.static(path.join(__dirname, 'audio')));
 
 const LANGUAGE = process.env.TWILIO_LANGUAGE || 'zh-CN';
 const BASE_URL = (process.env.BASE_URL || '').replace(/\/$/, '');
+const FIRST_MESSAGE = process.env.FIRST_MESSAGE || '你好，请说话。';
+const SYSTEM_PROMPT = process.env.SYSTEM_PROMPT || 'You are a helpful voice assistant.';
 
 function log(callSid, step, detail = '') {
   const ts = new Date().toISOString();
@@ -42,7 +44,7 @@ app.post("/voice", (req, res) => {
   res.type("text/xml");
   res.send(`
 <Response>
-  <Say language="${LANGUAGE}">你好，请说话。</Say>
+  <Say language="${LANGUAGE}">${FIRST_MESSAGE}</Say>
   <Record action="${BASE_URL}/process" method="POST"
           maxLength="30" timeout="3" playBeep="false"
           trim="trim-silence" />
@@ -110,7 +112,7 @@ app.post("/process", async (req, res) => {
     history.push({ role: "user", content: userText });
     if (history.length > 10) history = history.slice(-10);
 
-    const systemPrompt = `You are a helpful voice assistant.
+    const systemPrompt = `${SYSTEM_PROMPT}
 
 User memory:
 ${JSON.stringify(memory)}
