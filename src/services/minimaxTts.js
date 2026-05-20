@@ -11,7 +11,7 @@ const AUDIO_DIR = path.join(__dirname, '..', '..', 'audio');
 
 export async function synthesizeSpeech(text) {
   const apiKey = process.env.MINIMAX_API_KEY;
-  const voiceId = process.env.MINIMAX_VOICE_ID || 'Gentle_grace';
+  const voiceId = process.env.MINIMAX_VOICE_ID || 'Cantonese_GentleLady';
   const model = process.env.MINIMAX_MODEL || 'speech-02-turbo';
 
   if (!apiKey) {
