@@ -1,69 +1,49 @@
 import axios from 'axios';
 
-// Support both SAP Hyperspace LiteLLM proxy and OpenRouter
-const LLM_BASE_URL = process.env.LLM_BASE_URL || 'https://openrouter.ai/api/v1/chat/completions';
+const OPENCLAW_URL = process.env.OPENCLAW_URL || 'https://voiceclaw.zeabur.app/api/chat';
 
-// Free models to try in order — falls back if one is rate-limited
-const FREE_MODELS = [
-  'deepseek/deepseek-v4-flash:free',
-  'meta-llama/llama-3.3-70b-instruct:free',
-  'google/gemma-4-31b-it:free',
-  'nvidia/nemotron-3-super-120b-a12b:free',
-  'nousresearch/hermes-3-llama-3.1-405b:free',
-];
+/**
+ * Query OpenClaw LLM via voiceclaw.zeabur.app
+ * @param {Array} messages - Array of {role, content} messages
+ * @returns {string} The assistant's reply
+ */
+export async function queryLLM(messages) {
+  // Extract the latest user message to send to OpenClaw
+  const lastUserMessage = [...messages]
+    .reverse()
+    .find(m => m.role === 'user');
 
-async function callLLM(apiKey, model, payload) {
-  const headers = {
-    'Content-Type': 'application/json',
-  };
+  const userText = lastUserMessage?.content || '';
 
-  // Always include Authorization header if apiKey is provided
-  if (apiKey) {
-    headers['Authorization'] = `Bearer ${apiKey}`;
+  if (!userText) {
+    throw new Error('No user message found in conversation');
   }
 
-  const response = await axios.post(LLM_BASE_URL, { ...payload, model }, {
-    headers,
-    timeout: 15000,
-  });
-  return response.data.choices[0].message.content;
-}
+  try {
+    const response = await axios.post(OPENCLAW_URL, {
+      message: userText,
+    }, {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      timeout: 30000,
+    });
 
-export async function queryLLM(messages, systemPrompt) {
-  // Support both LLM_API_KEY (for SAP proxy) and OPENROUTER_API_KEY (legacy)
-  const apiKey = process.env.LLM_API_KEY || process.env.OPENROUTER_API_KEY;
-  const preferredModel = process.env.LLM_MODEL || process.env.OPENROUTER_MODEL;
-
-  if (!apiKey) {
-    throw new Error('LLM_API_KEY (or OPENROUTER_API_KEY) is not set');
-  }
-
-  const payload = {
-    messages: systemPrompt
-      ? [{ role: 'system', content: systemPrompt }, ...messages]
-      : messages,
-  };
-
-  const models = preferredModel ? [preferredModel, ...FREE_MODELS] : FREE_MODELS;
-
-  let lastErr;
-  for (const model of models) {
-    try {
-      return await callLLM(apiKey, model, payload);
-    } catch (err) {
-      const status = err.response?.status;
-      const retryAfter = err.response?.data?.metadata?.retry_after_seconds;
-      console.warn(`LLM ${model} failed (${status}):`, JSON.stringify(err.response?.data?.error));
-      if (status === 429 || status === 404) {
-        lastErr = err;
-        if (retryAfter) {
-          await new Promise(r => setTimeout(r, retryAfter * 1000));
-        }
-        continue;
-      }
-      throw err;
+    const reply = response.data?.reply;
+    if (!reply) {
+      console.error('OpenClaw unexpected response:', JSON.stringify(response.data, null, 2));
+      throw new Error('OpenClaw returned no reply');
     }
-  }
 
-  throw lastErr;
+    return reply;
+  } catch (err) {
+    if (err.response) {
+      console.error('OpenClaw API error:', {
+        status: err.response.status,
+        data: err.response.data,
+      });
+      throw new Error(`OpenClaw API error (${err.response.status}): ${JSON.stringify(err.response.data)}`);
+    }
+    throw err;
+  }
 }
