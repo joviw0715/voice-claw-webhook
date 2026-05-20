@@ -13,7 +13,6 @@ export async function synthesizeSpeech(text) {
   const apiKey = process.env.MINIMAX_API_KEY;
   const voiceId = process.env.MINIMAX_VOICE_ID || 'Gentle_grace';
   const model = process.env.MINIMAX_MODEL || 'speech-02-turbo';
-  const language = process.env.MINIMAX_LANGUAGE || 'Cantonese';
 
   if (!apiKey) {
     throw new Error('MINIMAX_API_KEY is not set');
@@ -23,7 +22,6 @@ export async function synthesizeSpeech(text) {
     model,
     text,
     stream: false,
-    language_boost: language,
     voice_setting: {
       voice_id: voiceId,
       speed: 1.0,
