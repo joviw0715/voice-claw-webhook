@@ -125,7 +125,7 @@ ${knowledge.join('\n')}`;
     const reply = await queryLLM([
       { role: "system", content: systemPrompt },
       ...history
-    ], callSid);
+    ]);
     log(callSid, '4/6 LLM    ✓', `"${reply.slice(0, 80)}${reply.length > 80 ? '…' : ''}" (${Date.now() - t3}ms)`);
 
     // 4. Save conversation

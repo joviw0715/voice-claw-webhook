@@ -1,71 +1,63 @@
 import axios from 'axios';
 
-const OPENCLAW_URL = process.env.OPENCLAW_URL || 'https://voiceclaw.zeabur.app';
-const OPENCLAW_TOKEN = process.env.OPENCLAW_TOKEN || '';
+const LLM_BASE_URL = process.env.LLM_BASE_URL || 'https://openrouter.ai/api/v1/chat/completions';
+const LLM_MODEL = process.env.LLM_MODEL || 'deepseek/deepseek-v4-flash:free';
 
-/**
- * Query OpenClaw LLM via /v1/chat/completions endpoint
- * @param {Array} messages - Array of {role, content} messages
- * @param {string} sessionId - Session identifier (CallSid) for persistent sessions
- * @returns {string} The assistant's reply
- */
-export async function queryLLM(messages, sessionId) {
-  const endpoint = `${OPENCLAW_URL}/v1/chat/completions`;
+// Free models to try in order — falls back if one is rate-limited
+const FREE_MODELS = [
+  'deepseek/deepseek-v4-flash:free',
+  'meta-llama/llama-3.3-70b-instruct:free',
+  'google/gemma-4-31b-it:free',
+  'nvidia/nemotron-3-super-120b-a12b:free',
+  'nousresearch/hermes-3-llama-3.1-405b:free',
+];
 
-  console.log('[OpenClaw] Request details:', {
-    endpoint,
-    sessionId,
-    tokenSet: !!OPENCLAW_TOKEN,
-    tokenPrefix: OPENCLAW_TOKEN ? OPENCLAW_TOKEN.slice(0, 8) + '...' : '(empty)',
-    OPENCLAW_URL,
-    messageCount: messages.length,
-    messages: JSON.stringify(messages.map(m => ({ role: m.role, content: m.content?.slice(0, 50) }))),
-  });
-
-  if (!OPENCLAW_TOKEN) {
-    throw new Error('OPENCLAW_TOKEN is not set');
-  }
-
-  const clawPayload = {
-    model: 'openclaw/default',
-    messages,
-    user: sessionId,
-    openclaw: {
-      session: {
-        persistent: true,
-      },
-    },
+async function callLLM(apiKey, model, payload) {
+  const headers = {
+    'Content-Type': 'application/json',
   };
 
-  try {
-    const response = await axios.post(
-      endpoint,
-      clawPayload,
-      {
-        headers: {
-          Authorization: `Bearer ${OPENCLAW_TOKEN}`,
-          'Content-Type': 'application/json',
-          'x-openclaw-session-key': sessionId,
-        },
-        timeout: 25000,
-      }
-    );
-
-    const reply = response.data?.choices?.[0]?.message?.content;
-    if (!reply) {
-      console.error('OpenClaw unexpected response:', JSON.stringify(response.data, null, 2));
-      throw new Error('OpenClaw returned no reply');
-    }
-
-    return reply;
-  } catch (err) {
-    if (err.response) {
-      console.error('OpenClaw API error:', {
-        status: err.response.status,
-        data: err.response.data,
-      });
-      throw new Error(`OpenClaw API error (${err.response.status}): ${JSON.stringify(err.response.data)}`);
-    }
-    throw err;
+  if (apiKey) {
+    headers['Authorization'] = `Bearer ${apiKey}`;
   }
+
+  const response = await axios.post(LLM_BASE_URL, { ...payload, model }, {
+    headers,
+    timeout: 25000,
+  });
+  return response.data.choices[0].message.content;
+}
+
+export async function queryLLM(messages) {
+  const apiKey = process.env.LLM_API_KEY || process.env.OPENROUTER_API_KEY;
+  const preferredModel = process.env.LLM_MODEL || process.env.OPENROUTER_MODEL;
+
+  if (!apiKey) {
+    throw new Error('LLM_API_KEY (or OPENROUTER_API_KEY) is not set');
+  }
+
+  const payload = { messages };
+
+  const models = preferredModel ? [preferredModel, ...FREE_MODELS] : FREE_MODELS;
+
+  let lastErr;
+  for (const model of models) {
+    try {
+      return await callLLM(apiKey, model, payload);
+    } catch (err) {
+      const status = err.response?.status;
+      const retryAfter = err.response?.data?.metadata?.retry_after_seconds;
+      console.warn(`LLM ${model} failed (${status}):`, JSON.stringify(err.response?.data?.error));
+      if (status === 429 || status === 404) {
+        lastErr = err;
+        if (retryAfter) {
+          await new Promise(r => setTimeout(r, retryAfter * 1000));
+        }
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  throw lastErr;
 }
