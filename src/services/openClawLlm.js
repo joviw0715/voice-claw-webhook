@@ -25,7 +25,7 @@ async function callOpenClawHTTP(messages, sessionKey) {
       'x-openclaw-session-key': sessionKey,
       'Content-Type': 'application/json',
     },
-    timeout: 25000,
+    timeout: 40000,
   });
 
   return response.data.choices[0].message.content;
