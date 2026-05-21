@@ -38,6 +38,10 @@ function recordTwiml(audioUrl = null) {
 </Response>`.trim();
 }
 
+// Tracks callSids we've already set up to detect Twilio webhook retries.
+// On retry: skip the greeting but still return stream TwiML so the stream can reconnect.
+const recentCalls = new Map(); // callSid → timestamp
+
 // Entry: Twilio call — greet and start listening
 app.post("/voice", (req, res) => {
   const callSid = req.body?.CallSid || 'unknown';
@@ -52,7 +56,21 @@ app.post("/voice", (req, res) => {
     return;
   }
 
-  log(callSid, '📞 CALL STARTED', `from ${phone}`);
+  // Detect Twilio webhook retries (same CallSid within 30s) — skip greeting on reconnect
+  const now = Date.now();
+  const isRetry = recentCalls.has(callSid);
+  recentCalls.set(callSid, now);
+  if (recentCalls.size > 200) {
+    for (const [sid, ts] of recentCalls) {
+      if (now - ts > 120000) recentCalls.delete(sid);
+    }
+  }
+
+  if (isRetry) {
+    log(callSid, '🔄 RECONNECT /voice (skip greeting)', `from ${phone}`);
+  } else {
+    log(callSid, '📞 CALL STARTED', `from ${phone}`);
+  }
   res.type("text/xml");
 
   if (process.env.USE_MEDIA_STREAMS === 'true') {
@@ -60,9 +78,10 @@ app.post("/voice", (req, res) => {
     const wsUrl = (BASE_URL || `https://${req.headers.host}`)
       .replace(/^https:\/\//, 'wss://')
       .replace(/^http:\/\//, 'ws://') + '/stream';
+    const sayGreeting = isRetry ? '' : `<Say language="${LANGUAGE}">${FIRST_MESSAGE}</Say>`;
     res.send(`
 <Response>
-  <Say language="${LANGUAGE}">${FIRST_MESSAGE}</Say>
+  ${sayGreeting}
   <Connect>
     <Stream url="${wsUrl}">
       <Parameter name="phone" value="${phone}" />

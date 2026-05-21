@@ -11,13 +11,19 @@ const SYSTEM_PROMPT = process.env.SYSTEM_PROMPT ||
 // Sentence delimiters — flush TTS on these boundaries for lower perceived latency
 const SENTENCE_RE = /[。？！\n]/;
 
-// Strip emoji and other non-speakable characters before TTS
+// Strip non-speakable characters before TTS: emoji, markdown formatting, name prefixes
 function cleanForTts(text) {
   return text
-    .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{1F300}-\u{1F9FF}]/gu, '')
-    .replace(/^[一-鿿\w]+[：:]\s*/u, '')
+    .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{1F300}-\u{1F9FF}]/gu, '') // emoji
+    .replace(/\*+/g, '')           // markdown bold/italic asterisks
+    .replace(/#+\s*/g, '')          // markdown headers
+    .replace(/[_~`]/g, '')          // other markdown
+    .replace(/^[一-鿿\w]+[：:]\s*/u, '') // LLM name prefix e.g. "祖兒："
     .trim();
 }
+
+// Track active stream handlers per callSid so reconnects displace the old handler
+const activeStreams = new Map(); // callSid → close()
 
 // OpenClaw sometimes returns an error string instead of an AI reply
 function isErrorResponse(text) {
@@ -36,6 +42,14 @@ export function createCallHandler(ws, log) {
   let state = 'IDLE';
   let cancelTts = null;
   let llmAborted = false;
+
+  function close() {
+    stt?.close();
+    llmAborted = true;
+    cancelTts?.();
+    cancelTts = null;
+    activeStreams.delete(callSid);
+  }
 
   // ── WebSocket helpers ────────────────────────────────────────────────────
 
@@ -192,6 +206,15 @@ export function createCallHandler(ws, log) {
         streamSid = msg.start.streamSid;
         callSid = msg.start.callSid;
         phone = msg.start.customParameters?.phone || 'unknown';
+
+        // If a prior handler exists for this call (Twilio reconnect), displace it
+        const prevClose = activeStreams.get(callSid);
+        if (prevClose) {
+          prevClose();
+          log(callSid, '🔄 DISPLACED old stream handler');
+        }
+        activeStreams.set(callSid, close);
+
         log(callSid, '🎙️  STREAM START', `from=${phone}`);
         startListening();
         return;
@@ -205,16 +228,12 @@ export function createCallHandler(ws, log) {
 
       if (msg.event === 'stop') {
         log(callSid, '📵 STREAM STOP');
-        stt?.close();
-        llmAborted = true;
-        cancelTts?.();
+        close();
       }
     },
 
     onClose() {
-      stt?.close();
-      llmAborted = true;
-      cancelTts?.();
+      close();
     },
   };
 }
