@@ -164,8 +164,8 @@ app.post("/process", async (req, res) => {
 </Response>`);
 });
 
-// Poll endpoint — Twilio calls this every ~3s until the audio is ready
-app.get("/poll/:callSid", async (req, res) => {
+// Poll endpoint — Twilio calls this via POST (Redirect default) every ~3s until the audio is ready
+app.post("/poll/:callSid", async (req, res) => {
   const callSid = req.params.callSid;
   log(callSid, '🔄 POLL   checking result');
 
