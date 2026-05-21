@@ -43,23 +43,48 @@ async function callOpenClawWS(messages) {
       done(reject, new Error('OpenClaw WebSocket connection timed out'));
     }, 10000);
 
-    ws.on('open', () => {
+    let challenged = false;
+    const sessionId = randomUUID();
+
+    const sendChat = () => {
       const payload = JSON.stringify({
         id: randomUUID(),
         method: 'chat.send',
         params: {
           message: formatMessages(messages),
-          session_id: randomUUID(),
+          session_id: sessionId,
         },
       });
-      console.log('[OpenClaw] connected, sending payload:', payload.slice(0, 200));
+      console.log('[OpenClaw] sending chat.send:', payload.slice(0, 200));
       ws.send(payload);
+    };
+
+    ws.on('open', () => {
+      console.log('[OpenClaw] connected, waiting for challenge...');
     });
 
     ws.on('message', (data) => {
-      console.log('[OpenClaw] message received:', data.toString().slice(0, 200));
+      const raw = data.toString();
+      console.log('[OpenClaw] message received:', raw.slice(0, 300));
       try {
-        const parsed = JSON.parse(data);
+        const parsed = JSON.parse(raw);
+
+        // Handle server challenge — respond with nonce then send chat
+        if (parsed.event === 'connect.challenge' || parsed.type === 'connect.challenge') {
+          const nonce = parsed.payload?.nonce;
+          console.log('[OpenClaw] responding to challenge, nonce:', nonce);
+          ws.send(JSON.stringify({
+            id: randomUUID(),
+            method: 'connect.challenge',
+            params: { nonce },
+          }));
+          if (!challenged) {
+            challenged = true;
+            sendChat();
+          }
+          return;
+        }
+
         const chunk = parsed.result?.delta ?? parsed.result?.message ?? parsed.result?.content
           ?? parsed.delta ?? parsed.message ?? parsed.content ?? '';
         accumulated += chunk;
