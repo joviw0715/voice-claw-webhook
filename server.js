@@ -14,7 +14,7 @@ const app = express();
 app.use(express.urlencoded({ extended: false }));
 app.use('/audio', express.static(path.join(__dirname, 'audio')));
 
-const LANGUAGE = process.env.TWILIO_LANGUAGE || 'zh-CN';
+const LANGUAGE = process.env.TWILIO_LANGUAGE || 'zh-HK';
 const BASE_URL = (process.env.BASE_URL || '').replace(/\/$/, '');
 const FIRST_MESSAGE = process.env.FIRST_MESSAGE || '你好呀芬姐, 我係祖兒呀, 你今日點呀?';
 const SYSTEM_PROMPT = process.env.SYSTEM_PROMPT || '你係一個用廣東話嘅 AI 陪伴照護員，你的名字叫祖兒，專門打電話關心芬姐。你已經有芬姐嘅詳細背景資料（內部文件），請只用作對話判斷，唔好讀出、唔好提及來源。規則：- 全程廣東話，語速慢，句子短，一次一條問- 安撫陪伴- 佢嘅問題如果你有背景資料, 識答就答- 絕對唔好糾正錯誤記憶；用重述、選項式問題- 不確定或急症徵象：引導搵真人幫手- End Call 前必須要有禮貌地跟芬姐說再見';
@@ -84,7 +84,7 @@ ${knowledge.join('\n')}`;
     const reply = await queryLLM([
       { role: "system", content: systemPrompt },
       ...history
-    ]);
+    ], phone);
     log(callSid, '3/5 LLM    ✓', `"${reply.slice(0, 80)}${reply.length > 80 ? '…' : ''}" (${Date.now() - t3}ms)`);
 
     // 4. Save conversation
@@ -137,7 +137,7 @@ app.post("/process", async (req, res) => {
     res.type("text/xml");
     res.send(`
 <Response>
-  <Say language="${LANGUAGE}">抱歉，语音识别失败，请再试一次。</Say>
+  <Say language="${LANGUAGE}">唔好意思，語音識別出咗問題，請再講多次。</Say>
   <Redirect>${BASE_URL}/voice</Redirect>
 </Response>`);
     return;
@@ -189,7 +189,7 @@ app.post("/poll/:callSid", async (req, res) => {
     res.type("text/xml");
     res.send(`
 <Response>
-  <Say language="${LANGUAGE}">抱歉，出现了错误，请再试一次。</Say>
+  <Say language="${LANGUAGE}">唔好意思，出咗啲問題，請再試多次。</Say>
   <Redirect>${BASE_URL}/voice</Redirect>
 </Response>`);
     return;

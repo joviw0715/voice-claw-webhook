@@ -10,7 +10,7 @@ const FREE_MODELS = [
   'nousresearch/hermes-3-llama-3.1-405b:free',
 ];
 
-async function callOpenClawHTTP(messages) {
+async function callOpenClawHTTP(messages, sessionKey) {
   const baseUrl = (process.env.OPENCLAW_URL || 'https://voiceclaw.zeabur.app').replace(/\/$/, '');
   const token = process.env.OPENCLAW_TOKEN;
 
@@ -22,7 +22,7 @@ async function callOpenClawHTTP(messages) {
   }, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'x-openclaw-session-key': 'agent:main:main',
+      'x-openclaw-session-key': sessionKey,
       'Content-Type': 'application/json',
     },
     timeout: 25000,
@@ -42,10 +42,14 @@ async function callOpenRouter(apiKey, model, messages) {
   return response.data.choices[0].message.content;
 }
 
-export async function queryLLM(messages) {
+export async function queryLLM(messages, phone) {
   if (process.env.OPENCLAW_TOKEN) {
+    // Derive a stable per-caller session key from the phone number
+    const sessionKey = phone
+      ? `agent:main:${phone.replace(/\D/g, '')}`
+      : 'agent:main:main';
     try {
-      return await callOpenClawHTTP(messages);
+      return await callOpenClawHTTP(messages, sessionKey);
     } catch (err) {
       console.warn('OpenClaw HTTP failed, falling back to OpenRouter:', err.response?.data?.error?.message || err.message);
     }
