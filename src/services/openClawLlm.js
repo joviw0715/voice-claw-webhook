@@ -23,7 +23,7 @@ async function callOpenClawWS(messages) {
   if (!host || !token) throw new Error('OPENCLAW_HOST or OPENCLAW_TOKEN not set');
 
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`ws://${host}:18789`, {
+    const ws = new WebSocket(`ws://${host}`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
 
