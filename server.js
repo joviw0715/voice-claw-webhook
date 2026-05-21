@@ -2,8 +2,7 @@ import 'dotenv/config';
 import express from "express";
 import { fileURLToPath } from "url";
 import path from "path";
-import { getContext, saveContext } from "./src/services/redisClient.js";
-import { getUserMemory } from "./src/services/redisClient.js";
+import { getContext, saveContext, getUserMemory, setResult, getResult, deleteResult } from "./src/services/redisClient.js";
 import { queryLLM } from "./src/services/openClawLlm.js";
 import { synthesizeSpeech } from "./src/services/minimaxTts.js";
 import { retrieveKnowledge } from "./src/services/qdrantClient.js";
@@ -52,7 +51,64 @@ app.post("/voice", (req, res) => {
 </Response>`);
 });
 
-// Processing pipeline
+// Background: RAG + LLM + TTS — stores audio URL in Redis when done
+async function processAsync(callSid, phone, userText) {
+  const start = Date.now();
+  try {
+    // 1. Load session context
+    log(callSid, '1/5 REDIS  loading conversation + memory');
+    let history = await getContext(callSid);
+    const memory = await getUserMemory(phone);
+    log(callSid, '1/5 REDIS  ✓', `history=${history.length} msgs, memory keys: ${Object.keys(memory).join(', ') || 'empty'}`);
+
+    // 2. RAG knowledge retrieval
+    log(callSid, '2/5 RAG    retrieving knowledge', `query="${userText.slice(0, 60)}"`);
+    const t2 = Date.now();
+    const knowledge = await retrieveKnowledge(userText);
+    log(callSid, '2/5 RAG    ✓', `${knowledge.length} result(s) (${Date.now() - t2}ms)`);
+
+    // 3. Build context and query LLM
+    history.push({ role: "user", content: userText });
+    if (history.length > 10) history = history.slice(-10);
+
+    const systemPrompt = `${SYSTEM_PROMPT}
+
+User memory:
+${JSON.stringify(memory)}
+
+Knowledge:
+${knowledge.join('\n')}`;
+
+    log(callSid, '3/5 LLM    querying', `history=${history.length} msgs`);
+    const t3 = Date.now();
+    const reply = await queryLLM([
+      { role: "system", content: systemPrompt },
+      ...history
+    ]);
+    log(callSid, '3/5 LLM    ✓', `"${reply.slice(0, 80)}${reply.length > 80 ? '…' : ''}" (${Date.now() - t3}ms)`);
+
+    // 4. Save conversation
+    history.push({ role: "assistant", content: reply });
+    log(callSid, '4/5 REDIS  saving conversation', `${history.length} messages`);
+    await saveContext(callSid, history);
+    log(callSid, '4/5 REDIS  ✓');
+
+    // 5. Text-to-Speech
+    log(callSid, '5/5 TTS    synthesizing speech', `text length=${reply.length}`);
+    const t5 = Date.now();
+    const audioUrl = await synthesizeSpeech(reply);
+    log(callSid, '5/5 TTS    ✓', `${audioUrl} (${Date.now() - t5}ms)`);
+
+    // Store result for poll endpoint
+    await setResult(callSid, audioUrl);
+    log(callSid, '✅ ASYNC DONE', `total=${Date.now() - start}ms — stored in Redis for poll`);
+  } catch (err) {
+    log(callSid, '❌ ASYNC ERROR', `${err.message} (after ${Date.now() - start}ms)`);
+    await setResult(callSid, 'ERROR');
+  }
+}
+
+// Processing pipeline — STT only, then hand off to background + poll
 app.post("/process", async (req, res) => {
   const callSid = req.body.CallSid || 'unknown';
   const phone = req.body.From || 'unknown';
@@ -70,12 +126,12 @@ app.post("/process", async (req, res) => {
   }
 
   // Transcribe with Azure STT
-  log(callSid, '3/6 STT    transcribing with Azure', `url=${recordingUrl}`);
+  log(callSid, 'STT   transcribing with Azure', `url=${recordingUrl}`);
   let userText;
   try {
     const t1 = Date.now();
     userText = await transcribeAudio(recordingUrl);
-    log(callSid, '3/6 STT    ✓ (Azure)', `"${userText}" (${Date.now() - t1}ms)`);
+    log(callSid, 'STT   ✓ (Azure)', `"${userText}" (${Date.now() - t1}ms)`);
   } catch (err) {
     log(callSid, '❌ STT ERROR', err.message);
     res.type("text/xml");
@@ -95,71 +151,53 @@ app.post("/process", async (req, res) => {
     return;
   }
 
-  try {
-    // 1. Load session context
-    log(callSid, '1/6 REDIS  loading conversation + memory');
-    let history = await getContext(callSid);
-    const memory = await getUserMemory(phone);
-    log(callSid, '1/6 REDIS  ✓', `history=${history.length} msgs, memory keys: ${Object.keys(memory).join(', ') || 'empty'}`);
+  // Fire LLM + TTS in background — respond immediately so Twilio doesn't time out
+  log(callSid, '⚡ ASYNC START', `launching background processing (${Date.now() - start}ms so far)`);
+  processAsync(callSid, phone, userText);
 
-    // 2. RAG knowledge retrieval
-    log(callSid, '2/6 RAG    retrieving knowledge', `query="${userText.slice(0, 60)}"`);
-    const t2 = Date.now();
-    const knowledge = await retrieveKnowledge(userText);
-    log(callSid, '2/6 RAG    ✓', `${knowledge.length} result(s) (${Date.now() - t2}ms)`);
+  log(callSid, '📤 POLL REDIRECT', `redirecting Twilio to poll — STT total=${Date.now() - start}ms`);
+  res.type("text/xml");
+  res.send(`
+<Response>
+  <Pause length="3"/>
+  <Redirect>${BASE_URL}/poll/${callSid}</Redirect>
+</Response>`);
+});
 
-    // 3. Build context and query LLM
-    history.push({ role: "user", content: userText });
-    if (history.length > 10) history = history.slice(-10);
+// Poll endpoint — Twilio calls this every ~3s until the audio is ready
+app.get("/poll/:callSid", async (req, res) => {
+  const callSid = req.params.callSid;
+  log(callSid, '🔄 POLL   checking result');
 
-    const systemPrompt = `${SYSTEM_PROMPT}
+  const audioUrl = await getResult(callSid);
 
-User memory:
-${JSON.stringify(memory)}
-
-Knowledge:
-${knowledge.join('\n')}`;
-
-    log(callSid, '4/6 LLM    querying', `history=${history.length} msgs`);
-    const t3 = Date.now();
-    const reply = await queryLLM([
-      { role: "system", content: systemPrompt },
-      ...history
-    ]);
-    log(callSid, '4/6 LLM    ✓', `"${reply.slice(0, 80)}${reply.length > 80 ? '…' : ''}" (${Date.now() - t3}ms)`);
-
-    // 4. Save conversation
-    history.push({ role: "assistant", content: reply });
-    log(callSid, '5/6 REDIS  saving conversation', `${history.length} messages`);
-    await saveContext(callSid, history);
-    log(callSid, '5/6 REDIS  ✓');
-
-    // 5. Text-to-Speech
-    log(callSid, '6/6 TTS    synthesizing speech', `text length=${reply.length}`);
-    const t4 = Date.now();
-    const audioUrl = await synthesizeSpeech(reply);
-    log(callSid, '6/6 TTS    ✓', `${audioUrl} (${Date.now() - t4}ms)`);
-
-    const total = Date.now() - start;
-    if (total > 12000) log(callSid, '⚠  SLOW RESPONSE', `${total}ms — Twilio webhook timeout is 15s, response may arrive too late`);
-    log(callSid, '✅ DONE', `total=${total}ms`);
-
-    // Play response then immediately start listening again
-    const twiml = recordTwiml(audioUrl);
-    log(callSid, '📤 TWIML SENT', `audioUrl=${audioUrl}`);
+  if (!audioUrl) {
+    log(callSid, '🔄 POLL   not ready yet, pausing 3s');
     res.type("text/xml");
-    res.send(twiml);
+    res.send(`
+<Response>
+  <Pause length="3"/>
+  <Redirect>${BASE_URL}/poll/${callSid}</Redirect>
+</Response>`);
+    return;
+  }
 
-  } catch (err) {
-    log(callSid, '❌ ERROR', `${err.message} (after ${Date.now() - start}ms)`);
-    console.error(err);
+  await deleteResult(callSid);
+
+  if (audioUrl === 'ERROR') {
+    log(callSid, '❌ POLL   background processing failed, looping back');
     res.type("text/xml");
     res.send(`
 <Response>
   <Say language="${LANGUAGE}">抱歉，出现了错误，请再试一次。</Say>
   <Redirect>${BASE_URL}/voice</Redirect>
 </Response>`);
+    return;
   }
+
+  log(callSid, '📤 POLL   ready, sending audio', audioUrl);
+  res.type("text/xml");
+  res.send(recordTwiml(audioUrl));
 });
 
 app.listen(process.env.PORT || 3000, () => {

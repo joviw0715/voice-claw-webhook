@@ -106,6 +106,24 @@ async function saveUserMemory(phoneNumber, memory) {
 }
 
 // ─────────────────────────────────────────────
+// Async result (poll pattern for Twilio timeout avoidance)
+// ─────────────────────────────────────────────
+
+const RESULT_TTL = 120; // 2 minutes — enough for any call
+
+async function setResult(callSid, audioUrl) {
+  await getClient().setex(`result:${callSid}`, RESULT_TTL, audioUrl);
+}
+
+async function getResult(callSid) {
+  return await getClient().get(`result:${callSid}`);
+}
+
+async function deleteResult(callSid) {
+  await getClient().del(`result:${callSid}`);
+}
+
+// ─────────────────────────────────────────────
 
 
 export {
@@ -116,5 +134,8 @@ export {
   saveContext,
   getUserMemory,
   updateUserMemory,
-  saveUserMemory
+  saveUserMemory,
+  setResult,
+  getResult,
+  deleteResult,
 };
