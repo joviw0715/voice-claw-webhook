@@ -87,16 +87,19 @@ ${knowledge.join('\n')}`;
     ], phone);
     log(callSid, '3/5 LLM    ✓', `"${reply.slice(0, 80)}${reply.length > 80 ? '…' : ''}" (${Date.now() - t3}ms)`);
 
+    // Strip name prefixes the LLM sometimes adds (e.g. "祖兒：", "AI：")
+    const cleanReply = reply.replace(/^[一-鿿\w]+[：:]\s*/u, '').trim();
+
     // 4. Save conversation
-    history.push({ role: "assistant", content: reply });
+    history.push({ role: "assistant", content: cleanReply });
     log(callSid, '4/5 REDIS  saving conversation', `${history.length} messages`);
     await saveContext(callSid, history);
     log(callSid, '4/5 REDIS  ✓');
 
     // 5. Text-to-Speech
-    log(callSid, '5/5 TTS    synthesizing speech', `text length=${reply.length}`);
+    log(callSid, '5/5 TTS    synthesizing speech', `text length=${cleanReply.length}`);
     const t5 = Date.now();
-    const audioUrl = await synthesizeSpeech(reply);
+    const audioUrl = await synthesizeSpeech(cleanReply);
     log(callSid, '5/5 TTS    ✓', `${audioUrl} (${Date.now() - t5}ms)`);
 
     // Store result for poll endpoint
@@ -159,7 +162,8 @@ app.post("/process", async (req, res) => {
   res.type("text/xml");
   res.send(`
 <Response>
-  <Pause length="3"/>
+  <Say language="${LANGUAGE}">係，等我諗吓。</Say>
+  <Pause length="12"/>
   <Redirect>${BASE_URL}/poll/${callSid}</Redirect>
 </Response>`);
 });
@@ -176,6 +180,7 @@ app.post("/poll/:callSid", async (req, res) => {
     res.type("text/xml");
     res.send(`
 <Response>
+  <Say language="${LANGUAGE}">再等一陣。</Say>
   <Pause length="3"/>
   <Redirect>${BASE_URL}/poll/${callSid}</Redirect>
 </Response>`);
