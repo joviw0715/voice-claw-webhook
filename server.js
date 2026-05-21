@@ -58,6 +58,7 @@ app.post("/voice", (req, res) => {
       <Parameter name="phone" value="${phone}" />
     </Stream>
   </Connect>
+  <Hangup/>
 </Response>`);
   } else {
     // Legacy record/webhook path

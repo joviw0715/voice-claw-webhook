@@ -11,6 +11,19 @@ const SYSTEM_PROMPT = process.env.SYSTEM_PROMPT ||
 // Sentence delimiters — flush TTS on these boundaries for lower perceived latency
 const SENTENCE_RE = /[。？！\n]/;
 
+// Strip emoji and other non-speakable characters before TTS
+function cleanForTts(text) {
+  return text
+    .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{1F300}-\u{1F9FF}]/gu, '')
+    .replace(/^[一-鿿\w]+[：:]\s*/u, '')
+    .trim();
+}
+
+// OpenClaw sometimes returns an error string instead of an AI reply
+function isErrorResponse(text) {
+  return text.startsWith('⚠') || text.startsWith('Error') || text.startsWith('error');
+}
+
 // Creates a handler for one Twilio Media Stream WebSocket connection.
 // log(callSid, step, detail) — same logger signature as server.js
 export function createCallHandler(ws, log) {
@@ -94,7 +107,6 @@ export function createCallHandler(ws, log) {
 
       if (llmAborted) return;
 
-      const trimmedName = /^[一-鿿\w]+[：:]\s*/u;
       const updatedHistory = [...history, { role: 'user', content: userText }].slice(-10);
       const systemPrompt = `${SYSTEM_PROMPT}\nUser memory: ${JSON.stringify(memory)}\nKnowledge: ${knowledge.join('\n')}`;
 
@@ -118,7 +130,7 @@ export function createCallHandler(ws, log) {
           const parts = sentenceBuf.split(SENTENCE_RE);
           sentenceBuf = parts.pop() ?? '';
           for (const part of parts) {
-            const sentence = part.replace(trimmedName, '').trim();
+            const sentence = cleanForTts(part);
             if (sentence.length >= 2 && !llmAborted) {
               log(callSid, '🔊 TTS', `"${sentence}"`);
               await speakSentence(sentence);
@@ -128,14 +140,23 @@ export function createCallHandler(ws, log) {
       }
 
       // Flush remainder
-      const tail = sentenceBuf.replace(trimmedName, '').trim();
+      const tail = cleanForTts(sentenceBuf);
       if (tail.length >= 2 && !llmAborted) {
         log(callSid, '🔊 TTS (tail)', `"${tail}"`);
         await speakSentence(tail);
       }
 
       if (!llmAborted) {
-        const cleanReply = fullReply.replace(trimmedName, '').trim();
+        const cleanReply = cleanForTts(fullReply);
+
+        // OpenClaw sometimes returns an error string — don't save it or speak it
+        if (isErrorResponse(cleanReply)) {
+          log(callSid, '⚠  LLM ERROR RESPONSE', cleanReply.slice(0, 80));
+          await speakSentence('唔好意思，我聽唔清楚，可以再講一次嗎？');
+          state = 'LISTENING';
+          return;
+        }
+
         log(callSid, '✅ TURN DONE', `"${cleanReply.slice(0, 80)}" (${Date.now() - t0}ms)`);
         await saveContext(callSid, [
           ...updatedHistory,
