@@ -73,9 +73,9 @@ async function callOpenClawWS(messages) {
           const nonce = parsed.payload?.nonce;
           console.log('[OpenClaw] responding to challenge, nonce:', nonce);
           ws.send(JSON.stringify({
-            id: randomUUID(),
-            method: 'connect.challenge',
-            params: { nonce },
+            type: 'event',
+            event: 'connect.challenge',
+            payload: { nonce },
           }));
           state = 'awaiting-ack';
           return;
