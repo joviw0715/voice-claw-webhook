@@ -111,6 +111,20 @@ async function callOpenClawWS(messages) {
           return;
         }
 
+        // chat.send response — check for errors
+        if (state === 'chatting' && parsed.type === 'res') {
+          if (!parsed.ok) {
+            done(reject, new Error(`OpenClaw chat.send failed: ${parsed.error?.message}`));
+            return;
+          }
+          // some servers return the full reply in the res payload
+          const content = parsed.payload?.message ?? parsed.payload?.content ?? parsed.payload?.reply ?? '';
+          if (content) {
+            done(resolve, content);
+          }
+          return;
+        }
+
         const chunk = parsed.result?.delta ?? parsed.result?.message ?? parsed.result?.content
           ?? parsed.delta ?? parsed.message ?? parsed.content ?? '';
         accumulated += chunk;
