@@ -69,13 +69,13 @@ async function callOpenClawWS(messages) {
       try {
         const parsed = JSON.parse(raw);
 
-        if (state === 'awaiting-challenge' && (parsed.event === 'connect.challenge' || parsed.type === 'connect.challenge')) {
+        if (state === 'awaiting-challenge' && parsed.event === 'connect.challenge') {
           const nonce = parsed.payload?.nonce;
           console.log('[OpenClaw] responding to challenge, nonce:', nonce);
           ws.send(JSON.stringify({
-            type: 'event',
-            event: 'connect.challenge',
-            payload: { nonce },
+            id: randomUUID(),
+            method: 'connect.challenge',
+            params: { nonce },
           }));
           state = 'awaiting-ack';
           return;
