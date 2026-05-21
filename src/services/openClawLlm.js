@@ -47,15 +47,14 @@ async function callOpenClawWS(messages) {
       done(reject, new Error('OpenClaw WebSocket connection timed out'));
     }, 10000);
 
-    let state = 'awaiting-challenge'; // awaiting-challenge → awaiting-res → chatting
+    let state = 'awaiting-challenge';
     const sessionId = randomUUID();
 
     const sendChat = () => {
       const payload = JSON.stringify({
-        type: 'req',
-        id: randomUUID(),
-        method: 'chat.send',
-        params: {
+        type: 'event',
+        event: 'chat.send',
+        payload: {
           message: formatMessages(messages),
           session_id: sessionId,
         },
@@ -75,60 +74,29 @@ async function callOpenClawWS(messages) {
         const parsed = JSON.parse(raw);
 
         if (state === 'awaiting-challenge' && parsed.event === 'connect.challenge') {
-          console.log('[OpenClaw] sending connect request with auth token');
+          const nonce = parsed.payload?.nonce;
+          console.log('[OpenClaw] responding to challenge, nonce:', nonce);
           ws.send(JSON.stringify({
-            type: 'req',
-            id: randomUUID(),
-            method: 'connect',
-            params: {
-              minProtocol: 4,
-              maxProtocol: 4,
-              client: {
-                id: 'webchat-ui',
-                version: 'webchat-ui',
-                platform: 'web',
-                mode: 'webchat',
-                instanceId: randomUUID(),
-              },
-              role: 'operator',
-              caps: ['tool-events'],
-              auth: { token },
-            },
+            type: 'event',
+            event: 'connect.challenge',
+            payload: { nonce },
           }));
-          state = 'awaiting-res';
-          return;
-        }
-
-        // connect response — server confirmed auth, now send chat
-        if (state === 'awaiting-res' && parsed.type === 'res') {
-          if (!parsed.ok) {
-            done(reject, new Error(`OpenClaw connect rejected: ${JSON.stringify(parsed.error)}`));
-            return;
-          }
-          console.log('[OpenClaw] connect OK, sending chat.send');
           state = 'chatting';
           sendChat();
           return;
         }
 
-        // chat.send response — check for errors
-        if (state === 'chatting' && parsed.type === 'res') {
-          if (!parsed.ok) {
-            done(reject, new Error(`OpenClaw chat.send failed: ${parsed.error?.message}`));
-            return;
-          }
-          // some servers return the full reply in the res payload
-          const content = parsed.payload?.message ?? parsed.payload?.content ?? parsed.payload?.reply ?? '';
-          if (content) {
-            done(resolve, content);
-          }
+        // chat.send error response
+        if (parsed.type === 'res' && parsed.ok === false) {
+          done(reject, new Error(`OpenClaw error: ${parsed.error?.message}`));
           return;
         }
 
-        const chunk = parsed.result?.delta ?? parsed.result?.message ?? parsed.result?.content
+        const chunk = parsed.payload?.delta ?? parsed.payload?.message ?? parsed.payload?.content
+          ?? parsed.result?.delta ?? parsed.result?.message ?? parsed.result?.content
           ?? parsed.delta ?? parsed.message ?? parsed.content ?? '';
         accumulated += chunk;
-        if (parsed.result?.done || parsed.done) {
+        if (parsed.payload?.done || parsed.result?.done || parsed.done) {
           done(resolve, accumulated);
         }
       } catch {
