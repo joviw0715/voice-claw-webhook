@@ -1,6 +1,4 @@
-import WebSocket from 'ws';
 import axios from 'axios';
-import { randomUUID } from 'crypto';
 
 const LLM_BASE_URL = process.env.LLM_BASE_URL || 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -12,143 +10,25 @@ const FREE_MODELS = [
   'nousresearch/hermes-3-llama-3.1-405b:free',
 ];
 
-function formatMessages(messages) {
-  return messages.map(m => `${m.role}: ${m.content}`).join('\n');
-}
-
-async function callOpenClawWS(messages) {
-  const host = process.env.OPENCLAW_HOST;
+async function callOpenClawHTTP(messages) {
+  const baseUrl = (process.env.OPENCLAW_URL || 'https://voiceclaw.zeabur.app').replace(/\/$/, '');
   const token = process.env.OPENCLAW_TOKEN;
 
-  if (!host || !token) throw new Error('OPENCLAW_HOST or OPENCLAW_TOKEN not set');
+  if (!token) throw new Error('OPENCLAW_TOKEN not set');
 
-  return new Promise((resolve, reject) => {
-    const url = /^wss?:\/\//.test(host) ? host : `wss://${host}`;
-    const origin = url.replace(/^ws/, 'http');
-    const ws = new WebSocket(url, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Origin': origin,
-      },
-    });
-
-    let settled = false;
-    let accumulated = '';
-
-    const done = (fn, val) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(connectTimeout);
-      ws.terminate();
-      fn(val);
-    };
-
-    const connectTimeout = setTimeout(() => {
-      done(reject, new Error('OpenClaw WebSocket connection timed out'));
-    }, 10000);
-
-    let state = 'awaiting-challenge';
-
-    const sendChat = () => {
-      const payload = JSON.stringify({
-        type: 'req',
-        id: randomUUID(),
-        method: 'chat.send',
-        params: {
-          sessionKey: 'agent:main:main',
-          message: formatMessages(messages),
-          deliver: false,
-          idempotencyKey: randomUUID(),
-        },
-      });
-      console.log('[OpenClaw] sending chat.send:', payload.slice(0, 200));
-      ws.send(payload);
-    };
-
-    ws.on('open', () => {
-      console.log('[OpenClaw] connected, waiting for challenge...');
-    });
-
-    ws.on('message', (data) => {
-      const raw = data.toString();
-      console.log('[OpenClaw] message received:', raw.slice(0, 300));
-      try {
-        const parsed = JSON.parse(raw);
-
-        if (state === 'awaiting-challenge' && parsed.event === 'connect.challenge') {
-          const nonce = parsed.payload?.nonce;
-          console.log('[OpenClaw] responding to challenge, nonce:', nonce);
-          ws.send(JSON.stringify({
-            type: 'req',
-            id: randomUUID(),
-            method: 'connect',
-            params: {
-              minProtocol: 4,
-              maxProtocol: 4,
-              client: {
-                id: 'openclaw-control-ui',
-                version: 'control-ui',
-                platform: 'web',
-                mode: 'webchat',
-                instanceId: randomUUID(),
-              },
-              role: 'operator',
-              caps: ['tool-events'],
-              auth: { token },
-            },
-          }));
-          state = 'awaiting-res';
-          return;
-        }
-
-        if (state === 'awaiting-res' && parsed.type === 'res') {
-          if (!parsed.ok) {
-            done(reject, new Error(`OpenClaw connect rejected: ${parsed.error?.message}`));
-            return;
-          }
-          console.log('[OpenClaw] connect OK, sending chat.send');
-          state = 'chatting';
-          sendChat();
-          return;
-        }
-
-        if (parsed.type === 'res' && parsed.ok === false) {
-          done(reject, new Error(`OpenClaw error: ${parsed.error?.message}`));
-          return;
-        }
-
-        if (parsed.type === 'res' && parsed.ok === true) {
-          const content = parsed.payload?.message ?? parsed.payload?.content ?? parsed.payload?.reply ?? '';
-          if (content) { done(resolve, content); return; }
-        }
-
-        const chunk = parsed.payload?.delta ?? parsed.payload?.message ?? parsed.payload?.content
-          ?? parsed.result?.delta ?? parsed.result?.message ?? parsed.result?.content
-          ?? parsed.delta ?? parsed.message ?? parsed.content ?? '';
-        accumulated += chunk;
-        if (parsed.payload?.done || parsed.result?.done || parsed.done) {
-          done(resolve, accumulated);
-        }
-      } catch {
-        // ignore unparseable chunk
-      }
-    });
-
-    ws.on('close', (code, reason) => {
-      console.log('[OpenClaw] closed — code:', code, 'reason:', reason.toString(), 'accumulated:', accumulated.length, 'chars');
-      if (settled) return;
-      if (accumulated) {
-        done(resolve, accumulated);
-      } else {
-        done(reject, new Error(`OpenClaw WebSocket closed (${code}) with no response`));
-      }
-    });
-
-    ws.on('error', (err) => {
-      console.log('[OpenClaw] error:', err.message);
-      done(reject, err);
-    });
+  const response = await axios.post(`${baseUrl}/v1/chat/completions`, {
+    model: 'openclaw',
+    messages,
+  }, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'x-openclaw-session-key': 'agent:main:main',
+      'Content-Type': 'application/json',
+    },
+    timeout: 25000,
   });
+
+  return response.data.choices[0].message.content;
 }
 
 async function callOpenRouter(apiKey, model, messages) {
@@ -163,11 +43,11 @@ async function callOpenRouter(apiKey, model, messages) {
 }
 
 export async function queryLLM(messages) {
-  if (process.env.OPENCLAW_HOST && process.env.OPENCLAW_TOKEN) {
+  if (process.env.OPENCLAW_TOKEN) {
     try {
-      return await callOpenClawWS(messages);
+      return await callOpenClawHTTP(messages);
     } catch (err) {
-      console.warn('OpenClaw WebSocket failed, falling back to OpenRouter:', err.message);
+      console.warn('OpenClaw HTTP failed, falling back to OpenRouter:', err.response?.data?.error?.message || err.message);
     }
   }
 
