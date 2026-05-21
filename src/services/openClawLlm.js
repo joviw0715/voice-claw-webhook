@@ -24,8 +24,12 @@ async function callOpenClawWS(messages) {
 
   return new Promise((resolve, reject) => {
     const url = /^wss?:\/\//.test(host) ? host : `wss://${host}`;
+    const origin = url.replace(/^ws/, 'http');
     const ws = new WebSocket(url, {
-      headers: { 'Authorization': `Bearer ${token}` },
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Origin': origin,
+      },
     });
 
     let settled = false;
@@ -80,8 +84,8 @@ async function callOpenClawWS(messages) {
               minProtocol: 4,
               maxProtocol: 4,
               client: {
-                id: 'openclaw-control-ui',
-                version: 'control-ui',
+                id: 'webchat-ui',
+                version: 'webchat-ui',
                 platform: 'web',
                 mode: 'webchat',
                 instanceId: randomUUID(),
