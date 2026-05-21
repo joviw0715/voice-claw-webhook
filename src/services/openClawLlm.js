@@ -44,17 +44,20 @@ async function callOpenClawWS(messages) {
     }, 10000);
 
     ws.on('open', () => {
-      ws.send(JSON.stringify({
+      const payload = JSON.stringify({
         id: randomUUID(),
         method: 'chat.send',
         params: {
           message: formatMessages(messages),
           session_id: randomUUID(),
         },
-      }));
+      });
+      console.log('[OpenClaw] connected, sending payload:', payload.slice(0, 200));
+      ws.send(payload);
     });
 
     ws.on('message', (data) => {
+      console.log('[OpenClaw] message received:', data.toString().slice(0, 200));
       try {
         const parsed = JSON.parse(data);
         const chunk = parsed.result?.delta ?? parsed.result?.message ?? parsed.result?.content
@@ -68,7 +71,8 @@ async function callOpenClawWS(messages) {
       }
     });
 
-    ws.on('close', (code) => {
+    ws.on('close', (code, reason) => {
+      console.log('[OpenClaw] closed — code:', code, 'reason:', reason.toString(), 'accumulated:', accumulated.length, 'chars');
       if (settled) return;
       if (accumulated) {
         done(resolve, accumulated);
@@ -77,7 +81,10 @@ async function callOpenClawWS(messages) {
       }
     });
 
-    ws.on('error', (err) => done(reject, err));
+    ws.on('error', (err) => {
+      console.log('[OpenClaw] error:', err.message);
+      done(reject, err);
+    });
   });
 }
 

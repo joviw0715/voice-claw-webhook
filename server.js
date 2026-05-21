@@ -17,8 +17,8 @@ app.use('/audio', express.static(path.join(__dirname, 'audio')));
 
 const LANGUAGE = process.env.TWILIO_LANGUAGE || 'zh-CN';
 const BASE_URL = (process.env.BASE_URL || '').replace(/\/$/, '');
-const FIRST_MESSAGE = process.env.FIRST_MESSAGE || '你好，请说话。';
-const SYSTEM_PROMPT = process.env.SYSTEM_PROMPT || 'You are a helpful voice assistant.';
+const FIRST_MESSAGE = process.env.FIRST_MESSAGE || '你好呀芬姐, 我係祖兒呀, 你今日點呀?';
+const SYSTEM_PROMPT = process.env.SYSTEM_PROMPT || '你係一個用廣東話嘅 AI 陪伴照護員，你的名字叫祖兒，專門打電話關心芬姐。你已經有芬姐嘅詳細背景資料（內部文件），請只用作對話判斷，唔好讀出、唔好提及來源。規則：- 全程廣東話，語速慢，句子短，一次一條問- 安撫陪伴- 佢嘅問題如果你有背景資料, 識答就答- 絕對唔好糾正錯誤記憶；用重述、選項式問題- 不確定或急症徵象：引導搵真人幫手- End Call 前必須要有禮貌地跟芬姐說再見';
 
 function log(callSid, step, detail = '') {
   const ts = new Date().toISOString();
