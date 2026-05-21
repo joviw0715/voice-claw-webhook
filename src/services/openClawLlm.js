@@ -79,7 +79,16 @@ async function callOpenClawWS(messages) {
             params: {
               minProtocol: 4,
               maxProtocol: 4,
-              auth: { authToken: token },
+              client: {
+                id: 'openclaw-control-ui',
+                version: 'control-ui',
+                platform: 'web',
+                mode: 'webchat',
+                instanceId: randomUUID(),
+              },
+              role: 'operator',
+              caps: ['tool-events'],
+              auth: { token },
             },
           }));
           state = 'awaiting-res';
