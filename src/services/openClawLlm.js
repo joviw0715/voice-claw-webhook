@@ -48,15 +48,17 @@ async function callOpenClawWS(messages) {
     }, 10000);
 
     let state = 'awaiting-challenge';
-    const sessionId = randomUUID();
 
     const sendChat = () => {
       const payload = JSON.stringify({
-        type: 'event',
-        event: 'chat.send',
-        payload: {
+        type: 'req',
+        id: randomUUID(),
+        method: 'chat.send',
+        params: {
+          sessionKey: 'agent:main:main',
           message: formatMessages(messages),
-          session_id: sessionId,
+          deliver: false,
+          idempotencyKey: randomUUID(),
         },
       });
       console.log('[OpenClaw] sending chat.send:', payload.slice(0, 200));
@@ -77,19 +79,47 @@ async function callOpenClawWS(messages) {
           const nonce = parsed.payload?.nonce;
           console.log('[OpenClaw] responding to challenge, nonce:', nonce);
           ws.send(JSON.stringify({
-            type: 'event',
-            event: 'connect.challenge',
-            payload: { nonce },
+            type: 'req',
+            id: randomUUID(),
+            method: 'connect',
+            params: {
+              minProtocol: 4,
+              maxProtocol: 4,
+              client: {
+                id: 'openclaw-control-ui',
+                version: 'control-ui',
+                platform: 'web',
+                mode: 'webchat',
+                instanceId: randomUUID(),
+              },
+              role: 'operator',
+              caps: ['tool-events'],
+              auth: { token },
+            },
           }));
+          state = 'awaiting-res';
+          return;
+        }
+
+        if (state === 'awaiting-res' && parsed.type === 'res') {
+          if (!parsed.ok) {
+            done(reject, new Error(`OpenClaw connect rejected: ${parsed.error?.message}`));
+            return;
+          }
+          console.log('[OpenClaw] connect OK, sending chat.send');
           state = 'chatting';
           sendChat();
           return;
         }
 
-        // chat.send error response
         if (parsed.type === 'res' && parsed.ok === false) {
           done(reject, new Error(`OpenClaw error: ${parsed.error?.message}`));
           return;
+        }
+
+        if (parsed.type === 'res' && parsed.ok === true) {
+          const content = parsed.payload?.message ?? parsed.payload?.content ?? parsed.payload?.reply ?? '';
+          if (content) { done(resolve, content); return; }
         }
 
         const chunk = parsed.payload?.delta ?? parsed.payload?.message ?? parsed.payload?.content
