@@ -1,0 +1,199 @@
+import { decode as mulawDecode } from '../utils/mulaw.js';
+import { createSttStream } from './streamingStt.js';
+import { synthesizeToStream } from './streamingTts.js';
+import { streamQueryLLM } from './openClawLlm.js';
+import { getContext, saveContext, getUserMemory } from './redisClient.js';
+import { retrieveKnowledge } from './qdrantClient.js';
+
+const SYSTEM_PROMPT = process.env.SYSTEM_PROMPT ||
+  '你係一個用廣東話嘅 AI 陪伴照護員，你的名字叫祖兒，專門打電話關心芬姐。你已經有芬姐嘅詳細背景資料（內部文件），請只用作對話判斷，唔好讀出、唔好提及來源。規則：- 全程廣東話，語速慢，句子短，一次一條問- 安撫陪伴- 佢嘅問題如果你有背景資料, 識答就答- 絕對唔好糾正錯誤記憶；用重述、選項式問題- 不確定或急症徵象：引導搵真人幫手- End Call 前必須要有禮貌地跟芬姐說再見';
+
+// Sentence delimiters — flush TTS on these boundaries for lower perceived latency
+const SENTENCE_RE = /[。？！\n]/;
+
+// Creates a handler for one Twilio Media Stream WebSocket connection.
+// log(callSid, step, detail) — same logger signature as server.js
+export function createCallHandler(ws, log) {
+  let streamSid = null;
+  let callSid = 'unknown';
+  let phone = 'unknown';
+  let stt = null;
+
+  // IDLE → LISTENING → THINKING → SPEAKING → LISTENING …
+  let state = 'IDLE';
+  let cancelTts = null;
+  let llmAborted = false;
+
+  // ── WebSocket helpers ────────────────────────────────────────────────────
+
+  function sendMedia(audioBuffer) {
+    if (ws.readyState !== ws.OPEN) return;
+    ws.send(JSON.stringify({
+      event: 'media',
+      streamSid,
+      media: { payload: audioBuffer.toString('base64') },
+    }));
+  }
+
+  function sendClear() {
+    if (ws.readyState !== ws.OPEN) return;
+    ws.send(JSON.stringify({ event: 'clear', streamSid }));
+  }
+
+  // ── Interrupt ────────────────────────────────────────────────────────────
+
+  function interrupt(reason) {
+    if (state === 'SPEAKING' || state === 'THINKING') {
+      log(callSid, '🔇 INTERRUPT', reason);
+      sendClear();
+      llmAborted = true;
+      cancelTts?.();
+      cancelTts = null;
+      state = 'LISTENING';
+    }
+  }
+
+  // ── STT ──────────────────────────────────────────────────────────────────
+
+  function startListening() {
+    state = 'LISTENING';
+    stt = createSttStream({
+      onInterim(text) {
+        // User started speaking while AI is active — interrupt
+        if ((state === 'SPEAKING' || state === 'THINKING') && text.length >= 2) {
+          interrupt(`user interim: "${text.slice(0, 30)}"`);
+        }
+      },
+      onFinal(text) {
+        log(callSid, '👂 STT', `"${text}"`);
+        if (state === 'LISTENING' && text.trim().length >= 2) {
+          handleUserSpeech(text.trim());
+        }
+      },
+      onError(err) {
+        log(callSid, '❌ STT ERROR', err.message);
+      },
+    });
+  }
+
+  // ── Main pipeline ────────────────────────────────────────────────────────
+
+  async function handleUserSpeech(userText) {
+    state = 'THINKING';
+    llmAborted = false;
+    const t0 = Date.now();
+
+    try {
+      // Load context + RAG in parallel
+      const [history, memory, knowledge] = await Promise.all([
+        getContext(callSid),
+        getUserMemory(phone),
+        retrieveKnowledge(userText),
+      ]);
+      log(callSid, '📚 CONTEXT', `history=${history.length} knowledge=${knowledge.length} (${Date.now() - t0}ms)`);
+
+      if (llmAborted) return;
+
+      const trimmedName = /^[一-鿿\w]+[：:]\s*/u;
+      const updatedHistory = [...history, { role: 'user', content: userText }].slice(-10);
+      const systemPrompt = `${SYSTEM_PROMPT}\nUser memory: ${JSON.stringify(memory)}\nKnowledge: ${knowledge.join('\n')}`;
+
+      state = 'SPEAKING';
+      let fullReply = '';
+      let sentenceBuf = '';
+
+      log(callSid, '🤖 LLM START', `(${Date.now() - t0}ms since user spoke)`);
+
+      const llmStream = streamQueryLLM([
+        { role: 'system', content: systemPrompt },
+        ...updatedHistory,
+      ], phone);
+
+      for await (const tok of llmStream) {
+        if (llmAborted) break;
+        fullReply += tok;
+        sentenceBuf += tok;
+
+        if (SENTENCE_RE.test(sentenceBuf)) {
+          const parts = sentenceBuf.split(SENTENCE_RE);
+          sentenceBuf = parts.pop() ?? '';
+          for (const part of parts) {
+            const sentence = part.replace(trimmedName, '').trim();
+            if (sentence.length >= 2 && !llmAborted) {
+              log(callSid, '🔊 TTS', `"${sentence}"`);
+              await speakSentence(sentence);
+            }
+          }
+        }
+      }
+
+      // Flush remainder
+      const tail = sentenceBuf.replace(trimmedName, '').trim();
+      if (tail.length >= 2 && !llmAborted) {
+        log(callSid, '🔊 TTS (tail)', `"${tail}"`);
+        await speakSentence(tail);
+      }
+
+      if (!llmAborted) {
+        const cleanReply = fullReply.replace(trimmedName, '').trim();
+        log(callSid, '✅ TURN DONE', `"${cleanReply.slice(0, 80)}" (${Date.now() - t0}ms)`);
+        await saveContext(callSid, [
+          ...updatedHistory,
+          { role: 'assistant', content: cleanReply },
+        ]);
+        state = 'LISTENING';
+      }
+    } catch (err) {
+      log(callSid, '❌ PIPELINE ERROR', err.message);
+      state = 'LISTENING';
+    }
+  }
+
+  function speakSentence(text) {
+    return new Promise((resolve) => {
+      const handle = synthesizeToStream(text, {
+        onChunk(buf) { if (!llmAborted) sendMedia(buf); },
+        onDone() { cancelTts = null; resolve(); },
+        onError(err) { log(callSid, '⚠  TTS ERR', err.message); cancelTts = null; resolve(); },
+      });
+      cancelTts = () => { handle.cancel(); resolve(); };
+    });
+  }
+
+  // ── Public interface ─────────────────────────────────────────────────────
+
+  return {
+    onMessage(raw) {
+      let msg;
+      try { msg = JSON.parse(raw); } catch { return; }
+
+      if (msg.event === 'start') {
+        streamSid = msg.start.streamSid;
+        callSid = msg.start.callSid;
+        phone = msg.start.customParameters?.phone || 'unknown';
+        log(callSid, '🎙️  STREAM START', `from=${phone}`);
+        startListening();
+        return;
+      }
+
+      if (msg.event === 'media' && stt && state !== 'IDLE') {
+        const mulaw = Buffer.from(msg.media.payload, 'base64');
+        stt.write(mulawDecode(mulaw));
+        return;
+      }
+
+      if (msg.event === 'stop') {
+        log(callSid, '📵 STREAM STOP');
+        stt?.close();
+        llmAborted = true;
+        cancelTts?.();
+      }
+    },
+
+    onClose() {
+      stt?.close();
+      llmAborted = true;
+      cancelTts?.();
+    },
+  };
+}

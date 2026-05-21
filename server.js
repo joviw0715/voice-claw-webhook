@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from "express";
+import { WebSocketServer } from "ws";
 import { fileURLToPath } from "url";
 import path from "path";
 import { getContext, saveContext, getUserMemory, setResult, getResult, deleteResult } from "./src/services/redisClient.js";
@@ -7,6 +8,7 @@ import { queryLLM } from "./src/services/openClawLlm.js";
 import { synthesizeSpeech } from "./src/services/minimaxTts.js";
 import { retrieveKnowledge } from "./src/services/qdrantClient.js";
 import { transcribeAudio } from "./src/services/azureStt.js";
+import { createCallHandler } from "./src/services/streamManager.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -39,9 +41,27 @@ function recordTwiml(audioUrl = null) {
 // Entry: Twilio call — greet and start listening
 app.post("/voice", (req, res) => {
   const callSid = req.body?.CallSid || 'unknown';
-  log(callSid, '📞 CALL STARTED', `from ${req.body?.From || 'unknown'}`);
+  const phone = req.body?.From || 'unknown';
+  log(callSid, '📞 CALL STARTED', `from ${phone}`);
   res.type("text/xml");
-  res.send(`
+
+  if (process.env.USE_MEDIA_STREAMS === 'true') {
+    // Streaming path: greet via Say, then hand off audio to WebSocket stream
+    const wsUrl = (BASE_URL || `https://${req.headers.host}`)
+      .replace(/^https:\/\//, 'wss://')
+      .replace(/^http:\/\//, 'ws://') + '/stream';
+    res.send(`
+<Response>
+  <Say language="${LANGUAGE}">${FIRST_MESSAGE}</Say>
+  <Connect>
+    <Stream url="${wsUrl}">
+      <Parameter name="phone" value="${phone}" />
+    </Stream>
+  </Connect>
+</Response>`);
+  } else {
+    // Legacy record/webhook path
+    res.send(`
 <Response>
   <Say language="${LANGUAGE}">${FIRST_MESSAGE}</Say>
   <Record action="${BASE_URL}/process" method="POST"
@@ -49,6 +69,7 @@ app.post("/voice", (req, res) => {
           trim="trim-silence" />
   <Redirect>${BASE_URL}/voice</Redirect>
 </Response>`);
+  }
 });
 
 // Background: RAG + LLM + TTS — stores audio URL in Redis when done
@@ -205,6 +226,15 @@ app.post("/poll/:callSid", async (req, res) => {
   res.send(recordTwiml(audioUrl));
 });
 
-app.listen(process.env.PORT || 3000, () => {
+const server = app.listen(process.env.PORT || 3000, () => {
   console.log(`[server] running on port ${process.env.PORT || 3000}`);
+});
+
+// WebSocket server for Twilio Media Streams (used when USE_MEDIA_STREAMS=true)
+const wss = new WebSocketServer({ server, path: '/stream' });
+wss.on('connection', (ws) => {
+  const handler = createCallHandler(ws, log);
+  ws.on('message', (data) => handler.onMessage(data.toString()));
+  ws.on('close', () => handler.onClose());
+  ws.on('error', (err) => console.error('[ws] error:', err.message));
 });
