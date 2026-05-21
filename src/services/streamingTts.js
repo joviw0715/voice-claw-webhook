@@ -80,13 +80,16 @@ export function synthesizeToStream(text, { onChunk, onDone, onError }) {
             if (baseResp && baseResp.status_code !== 0) {
               throw new Error(`MiniMax TTS error ${baseResp.status_code}: ${baseResp.status_msg}`);
             }
-            const hexAudio = json.data?.audio;
-            if (hexAudio && hexAudio.length > 0 && !cancelled) {
-              onChunk(pcm16ToMulaw8k(Buffer.from(hexAudio, 'hex')));
-            }
+            // Check status BEFORE audio: the status=2 "done" event mirrors the
+            // non-streaming response format and may contain the full audio again.
+            // Skip its audio to avoid playing the whole thing twice.
             if (json.data?.status === 2) {
               if (!cancelled) onDone();
               return;
+            }
+            const hexAudio = json.data?.audio;
+            if (hexAudio && hexAudio.length > 0 && !cancelled) {
+              onChunk(pcm16ToMulaw8k(Buffer.from(hexAudio, 'hex')));
             }
           } catch (parseErr) {
             if (!cancelled) onError(parseErr);
