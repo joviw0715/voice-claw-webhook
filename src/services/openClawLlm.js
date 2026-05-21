@@ -43,11 +43,12 @@ async function callOpenClawWS(messages) {
       done(reject, new Error('OpenClaw WebSocket connection timed out'));
     }, 10000);
 
-    let state = 'awaiting-challenge'; // awaiting-challenge → awaiting-ack → chatting
+    let state = 'awaiting-challenge'; // awaiting-challenge → awaiting-res → chatting
     const sessionId = randomUUID();
 
     const sendChat = () => {
       const payload = JSON.stringify({
+        type: 'req',
         id: randomUUID(),
         method: 'chat.send',
         params: {
@@ -70,20 +71,28 @@ async function callOpenClawWS(messages) {
         const parsed = JSON.parse(raw);
 
         if (state === 'awaiting-challenge' && parsed.event === 'connect.challenge') {
-          const nonce = parsed.payload?.nonce;
-          console.log('[OpenClaw] responding to challenge, nonce:', nonce);
+          console.log('[OpenClaw] sending connect request with auth token');
           ws.send(JSON.stringify({
+            type: 'req',
             id: randomUUID(),
-            method: 'connect.challenge',
-            params: { nonce },
+            method: 'connect',
+            params: {
+              minProtocol: 4,
+              maxProtocol: 4,
+              auth: { authToken: token },
+            },
           }));
-          state = 'awaiting-ack';
+          state = 'awaiting-res';
           return;
         }
 
-        // Any message after challenge response = server ack → now safe to send chat
-        if (state === 'awaiting-ack') {
-          console.log('[OpenClaw] challenge ack received, sending chat.send');
+        // connect response — server confirmed auth, now send chat
+        if (state === 'awaiting-res' && parsed.type === 'res') {
+          if (!parsed.ok) {
+            done(reject, new Error(`OpenClaw connect rejected: ${JSON.stringify(parsed.error)}`));
+            return;
+          }
+          console.log('[OpenClaw] connect OK, sending chat.send');
           state = 'chatting';
           sendChat();
           return;
