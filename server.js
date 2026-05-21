@@ -140,11 +140,15 @@ ${knowledge.join('\n')}`;
     const audioUrl = await synthesizeSpeech(reply);
     log(callSid, '6/6 TTS    ✓', `${audioUrl} (${Date.now() - t4}ms)`);
 
-    log(callSid, '✅ DONE', `total=${Date.now() - start}ms`);
+    const total = Date.now() - start;
+    if (total > 12000) log(callSid, '⚠  SLOW RESPONSE', `${total}ms — Twilio webhook timeout is 15s, response may arrive too late`);
+    log(callSid, '✅ DONE', `total=${total}ms`);
 
     // Play response then immediately start listening again
+    const twiml = recordTwiml(audioUrl);
+    log(callSid, '📤 TWIML SENT', `audioUrl=${audioUrl}`);
     res.type("text/xml");
-    res.send(recordTwiml(audioUrl));
+    res.send(twiml);
 
   } catch (err) {
     log(callSid, '❌ ERROR', `${err.message} (after ${Date.now() - start}ms)`);
