@@ -74,14 +74,14 @@ app.post("/voice", (req, res) => {
   res.type("text/xml");
 
   if (process.env.USE_MEDIA_STREAMS === 'true') {
-    // Streaming path: greet via Say, then hand off audio to WebSocket stream
+    // Streaming path: connect stream immediately — greeting is played by the server
+    // through the WebSocket once the stream is established, so it plays exactly once
+    // regardless of how many Twilio webhook retries occurred during cold start.
     const wsUrl = (BASE_URL || `https://${req.headers.host}`)
       .replace(/^https:\/\//, 'wss://')
       .replace(/^http:\/\//, 'ws://') + '/stream';
-    const sayGreeting = isRetry ? '' : `<Say language="${LANGUAGE}">${FIRST_MESSAGE}</Say>`;
     res.send(`
 <Response>
-  ${sayGreeting}
   <Connect>
     <Stream url="${wsUrl}">
       <Parameter name="phone" value="${phone}" />

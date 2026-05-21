@@ -216,7 +216,18 @@ export function createCallHandler(ws, log) {
         activeStreams.set(callSid, close);
 
         log(callSid, '🎙️  STREAM START', `from=${phone}`);
-        startListening();
+
+        // Play greeting through the stream, then start listening.
+        // Doing this server-side means the greeting always plays exactly once
+        // when the stream actually connects, regardless of how many TwiML retries occurred.
+        const greetingText = process.env.FIRST_MESSAGE || '你好呀芬姐, 我係祖兒呀, 你今日點呀?';
+        state = 'SPEAKING';
+        log(callSid, '🔊 GREETING', `"${greetingText}"`);
+        synthesizeToStream(greetingText, {
+          onChunk(buf) { sendMedia(buf); },
+          onDone() { startListening(); },
+          onError(err) { log(callSid, '⚠ GREETING ERR', err.message); startListening(); },
+        });
         return;
       }
 
