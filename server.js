@@ -42,6 +42,16 @@ function recordTwiml(audioUrl = null) {
 app.post("/voice", (req, res) => {
   const callSid = req.body?.CallSid || 'unknown';
   const phone = req.body?.From || 'unknown';
+  const callStatus = req.body?.CallStatus || '';
+
+  // Twilio posts status callbacks to this same URL when a call ends —
+  // returning TwiML here would start a new call session, causing a restart loop.
+  if (['completed', 'busy', 'no-answer', 'canceled', 'failed'].includes(callStatus)) {
+    log(callSid, '📵 STATUS CALLBACK (ignored)', callStatus);
+    res.status(200).send('<Response></Response>');
+    return;
+  }
+
   log(callSid, '📞 CALL STARTED', `from ${phone}`);
   res.type("text/xml");
 
