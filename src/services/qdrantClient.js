@@ -59,6 +59,8 @@ async function getEmbedding(text) {
  * ✅ Rename to match server.js
  */
 export async function retrieveKnowledge(query, topK = 3) {
+  if (!process.env.EMBEDDING_API_URL) return [];
+
   const collection = process.env.QDRANT_COLLECTION || 'knowledge_base';
 
   const vector = await getEmbedding(query);

@@ -1,3 +1,4 @@
+import twilio from 'twilio';
 import { decode as mulawDecode } from '../utils/mulaw.js';
 import { createSttStream } from './streamingStt.js';
 import { synthesizeToStream } from './streamingTts.js';
@@ -10,6 +11,9 @@ const SYSTEM_PROMPT = process.env.SYSTEM_PROMPT ||
 
 // Sentence delimiters — flush TTS on these boundaries for lower perceived latency
 const SENTENCE_RE = /[。？！\n]/;
+
+// Cantonese + English farewell phrases
+const FAREWELL_RE = /拜拜|再見|掛線|掛電話|掰掰|goodbye|bye/i;
 
 // Strip non-speakable characters before TTS: emoji, markdown formatting, name prefixes
 function cleanForTts(text) {
@@ -50,6 +54,16 @@ export function createCallHandler(ws, log) {
     cancelTts?.();
     cancelTts = null;
     activeStreams.delete(callSid);
+  }
+
+  async function hangupCall() {
+    try {
+      const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+      await client.calls(callSid).update({ status: 'completed' });
+      log(callSid, '📵 HANGUP', 'call ended via REST API');
+    } catch (err) {
+      log(callSid, '⚠  HANGUP ERR', err.message);
+    }
   }
 
   // ── WebSocket helpers ────────────────────────────────────────────────────
@@ -135,6 +149,7 @@ export function createCallHandler(ws, log) {
     state = 'THINKING';
     llmAborted = false;
     const t0 = Date.now();
+    const userSaidFarewell = FAREWELL_RE.test(userText);
 
     // Safety net: abort the turn after 90s to prevent permanent hangs
     // (e.g. OpenClaw SSE stream stalls after first response byte)
@@ -159,7 +174,7 @@ export function createCallHandler(ws, log) {
 
       if (llmAborted) return;
 
-      const updatedHistory = [...history, { role: 'user', content: userText }].slice(-10);
+      const updatedHistory = [...history, { role: 'user', content: userText }].slice(-6);
       const systemPrompt = `${SYSTEM_PROMPT}\nUser memory: ${JSON.stringify(memory)}\nKnowledge: ${knowledge.join('\n')}`;
 
       state = 'SPEAKING';
@@ -221,6 +236,10 @@ export function createCallHandler(ws, log) {
         ]);
         ttsEndedAt = Date.now();
         state = 'LISTENING';
+        if (userSaidFarewell) {
+          log(callSid, '👋 FAREWELL', 'user said goodbye — hanging up');
+          await hangupCall();
+        }
       }
     } catch (err) {
       log(callSid, '❌ PIPELINE ERROR', err.message);
