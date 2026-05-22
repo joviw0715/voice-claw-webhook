@@ -3,6 +3,7 @@ import express from "express";
 import { WebSocketServer } from "ws";
 import { fileURLToPath } from "url";
 import path from "path";
+import twilio from "twilio";
 import { getContext, saveContext, getUserMemory, setResult, getResult, deleteResult } from "./src/services/redisClient.js";
 import { queryLLM } from "./src/services/openClawLlm.js";
 import { synthesizeSpeech } from "./src/services/minimaxTts.js";
@@ -41,6 +42,28 @@ function recordTwiml(audioUrl = null) {
 // Tracks callSids we've already set up to detect Twilio webhook retries.
 // On retry: skip the greeting but still return stream TwiML so the stream can reconnect.
 const recentCalls = new Map(); // callSid → timestamp
+
+// POST /call?to=+85212345678  — initiate an outbound call with no timeLimit
+app.post("/call", async (req, res) => {
+  const to = req.body?.to || req.query?.to;
+  if (!to) return res.status(400).json({ error: 'missing "to" parameter' });
+  const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+  try {
+    const call = await client.calls.create({
+      to,
+      from: process.env.TWILIO_FROM_NUMBER || process.env.TWILIO_PHONE_NUMBER,
+      url: `${BASE_URL}/voice`,
+      statusCallback: `${BASE_URL}/voice`,
+      statusCallbackMethod: 'POST',
+      // No timeLimit — defaults to 14400s (4 hours)
+    });
+    log(call.sid, '📞 OUTBOUND CALL INITIATED', `to=${to}`);
+    res.json({ sid: call.sid, status: call.status });
+  } catch (err) {
+    console.error('[call] error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // Entry: Twilio call — greet and start listening
 app.post("/voice", (req, res) => {
