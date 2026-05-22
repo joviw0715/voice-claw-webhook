@@ -39,10 +39,10 @@ export function createCallHandler(ws, log) {
   let phone = 'unknown';
   let stt = null;
 
-  // IDLE → LISTENING → THINKING → SPEAKING → LISTENING …
   let state = 'IDLE';
   let cancelTts = null;
   let llmAborted = false;
+  let ttsEndedAt = 0; // timestamp when last AI speech finished (for echo suppression)
 
   function close() {
     stt?.close();
@@ -98,6 +98,10 @@ export function createCallHandler(ws, log) {
       },
       onFinal(text) {
         if (stt !== thisStt) return; // superseded
+        if (Date.now() - ttsEndedAt < 1000) {
+          log(callSid, '🔇 ECHO SUPPRESSED', `"${text.slice(0, 30)}"`);
+          return;
+        }
         log(callSid, '👂 STT', `"${text}"`);
         if (state === 'LISTENING' && text.trim().length >= 2) {
           handleUserSpeech(text.trim());
@@ -215,10 +219,12 @@ export function createCallHandler(ws, log) {
           ...updatedHistory,
           { role: 'assistant', content: cleanReply },
         ]);
+        ttsEndedAt = Date.now();
         state = 'LISTENING';
       }
     } catch (err) {
       log(callSid, '❌ PIPELINE ERROR', err.message);
+      ttsEndedAt = Date.now();
       state = 'LISTENING';
     } finally {
       clearTimeout(turnTimer);
