@@ -16,7 +16,7 @@ const SENTENCE_RE = /[。？！\n]/;
 const FAREWELL_RE = /拜拜|再見|掛線|掛電話|掰掰|goodbye|bye/i;
 
 // Queries that need real-time tool calls (weather, current time/date) — route to OpenClaw
-const TOOL_QUERY_RE = /天氣|氣溫|溫度|下雨|落雨|預報|幾點|時間|幾號|日期|今日幾/;
+const TOOL_QUERY_RE = /天氣|氣溫|溫度|下雨|落雨|預報|幾點|幾號|日期/;
 
 // Strip non-speakable characters before TTS: emoji, markdown formatting, name prefixes
 function cleanForTts(text) {
