@@ -81,7 +81,44 @@ export async function queryLLM(messages, phone) {
   throw lastErr;
 }
 
-// Streaming variant — async generator that yields text tokens as they arrive via SSE.
+// Streaming via OpenRouter — for non-tool conversational queries where speed matters
+export async function* streamQueryOpenRouter(messages) {
+  const apiKey = process.env.LLM_API_KEY;
+  const model = process.env.LLM_MODEL || FREE_MODELS[0];
+  if (!apiKey) throw new Error('LLM_API_KEY not set');
+
+  const response = await axios.post(LLM_BASE_URL, {
+    messages,
+    model,
+    stream: true,
+  }, {
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'Accept': 'text/event-stream',
+    },
+    responseType: 'stream',
+    timeout: 20000,
+  });
+
+  let buf = '';
+  for await (const chunk of response.data) {
+    buf += chunk.toString('utf8');
+    const lines = buf.split('\n');
+    buf = lines.pop() ?? '';
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('data:')) continue;
+      const data = trimmed.slice(5).trim();
+      if (data === '[DONE]') return;
+      try {
+        const json = JSON.parse(data);
+        const tok = json.choices?.[0]?.delta?.content;
+        if (tok) yield tok;
+      } catch { /* non-JSON SSE line */ }
+    }
+  }
+}
 // Automatically falls back to yielding the full response as one chunk if the server
 // doesn't return text/event-stream.
 export async function* streamQueryLLM(messages, phone) {

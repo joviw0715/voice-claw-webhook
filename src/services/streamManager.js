@@ -2,7 +2,7 @@ import twilio from 'twilio';
 import { decode as mulawDecode } from '../utils/mulaw.js';
 import { createSttStream } from './streamingStt.js';
 import { synthesizeToStream } from './streamingTts.js';
-import { streamQueryLLM } from './openClawLlm.js';
+import { streamQueryLLM, streamQueryOpenRouter } from './openClawLlm.js';
 import { getContext, saveContext, getUserMemory } from './redisClient.js';
 import { retrieveKnowledge } from './qdrantClient.js';
 
@@ -14,6 +14,9 @@ const SENTENCE_RE = /[。？！\n]/;
 
 // Cantonese + English farewell phrases
 const FAREWELL_RE = /拜拜|再見|掛線|掛電話|掰掰|goodbye|bye/i;
+
+// Queries that need real-time tool calls (weather, current time/date) — route to OpenClaw
+const TOOL_QUERY_RE = /天氣|氣溫|溫度|下雨|落雨|預報|幾點|時間|幾號|日期|今日幾/;
 
 // Strip non-speakable characters before TTS: emoji, markdown formatting, name prefixes
 function cleanForTts(text) {
@@ -182,12 +185,12 @@ export function createCallHandler(ws, log) {
       let sentenceBuf = '';
       let firstToken = true;
 
-      log(callSid, '🤖 LLM START', `(${Date.now() - t0}ms since user spoke)`);
+      const useOpenRouter = !!process.env.LLM_API_KEY && !TOOL_QUERY_RE.test(userText);
+      log(callSid, '🤖 LLM START', `${useOpenRouter ? 'OpenRouter' : 'OpenClaw'} (${Date.now() - t0}ms since user spoke)`);
 
-      const llmStream = streamQueryLLM([
-        { role: 'system', content: systemPrompt },
-        ...updatedHistory,
-      ], phone);
+      const llmStream = useOpenRouter
+        ? streamQueryOpenRouter([{ role: 'system', content: systemPrompt }, ...updatedHistory])
+        : streamQueryLLM([{ role: 'system', content: systemPrompt }, ...updatedHistory], phone);
 
       for await (const tok of llmStream) {
         if (llmAborted) break;
