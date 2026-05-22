@@ -15,6 +15,17 @@ const SENTENCE_RE = /[。？！\n]/;
 // Cantonese + English farewell phrases
 const FAREWELL_RE = /拜拜|再見|掛線|掛電話|掰掰|goodbye|bye/i;
 
+// Callback scheduling — user asking to be called back after a delay
+const CALLBACK_RE = /打返|打電話返|call.*back|callback/i;
+
+function parseCallbackDelayMs(text) {
+  const minMatch = text.match(/(\d+)\s*分鐘/);
+  if (minMatch) return parseInt(minMatch[1]) * 60 * 1000;
+  if (/半個鐘|半小時/.test(text)) return 30 * 60 * 1000;
+  if (/一個鐘|1個鐘/.test(text)) return 60 * 60 * 1000;
+  return 60 * 1000; // default 1 min if no time found
+}
+
 // Strip non-speakable characters before TTS: emoji, markdown formatting, name prefixes
 function cleanForTts(text) {
   return text
@@ -156,6 +167,37 @@ export function createCallHandler(ws, log) {
     if (prevStt) prevStt.close();
   }
 
+  // ── Callback scheduling ──────────────────────────────────────────────────
+
+  async function handleCallbackRequest(userText) {
+    const delayMs = parseCallbackDelayMs(userText);
+    const delayMin = Math.round(delayMs / 60000);
+    log(callSid, '📅 CALLBACK SCHEDULED', `calling back ${phone} in ${delayMin}m`);
+
+    const baseUrl = (process.env.BASE_URL || '').replace(/\/$/, '');
+    setTimeout(async () => {
+      try {
+        const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+        await client.calls.create({
+          to: phone,
+          from: process.env.TWILIO_FROM_NUMBER || process.env.TWILIO_PHONE_NUMBER,
+          url: `${baseUrl}/voice`,
+        });
+        log(callSid, '📞 CALLBACK FIRED', `called back ${phone}`);
+      } catch (err) {
+        log(callSid, '⚠  CALLBACK ERR', err.message);
+      }
+    }, delayMs);
+
+    state = 'SPEAKING';
+    const confirmText = `好，芬姐，${delayMin}分鐘後我打返畀你，拜拜！`;
+    log(callSid, '🔊 CALLBACK CONFIRM', `"${confirmText}"`);
+    await speakSentence(confirmText);
+    ttsEndedAt = Date.now();
+    state = 'LISTENING';
+    await hangupCall();
+  }
+
   // ── Main pipeline ────────────────────────────────────────────────────────
 
   async function handleUserSpeech(userText) {
@@ -163,6 +205,17 @@ export function createCallHandler(ws, log) {
     llmAborted = false;
     const t0 = Date.now();
     const userSaidFarewell = FAREWELL_RE.test(userText);
+
+    // Short-circuit: callback scheduling is handled server-side via Twilio — no LLM needed
+    if (CALLBACK_RE.test(userText)) {
+      try {
+        await handleCallbackRequest(userText);
+      } catch (err) {
+        log(callSid, '❌ CALLBACK ERROR', err.message);
+        state = 'LISTENING';
+      }
+      return;
+    }
 
     // Safety net: abort the turn after 90s to prevent permanent hangs
     // (e.g. OpenClaw SSE stream stalls after first response byte)
