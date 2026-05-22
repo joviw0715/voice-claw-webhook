@@ -53,8 +53,6 @@ app.post("/call", async (req, res) => {
       to,
       from: process.env.TWILIO_FROM_NUMBER || process.env.TWILIO_PHONE_NUMBER,
       url: `${BASE_URL}/voice`,
-      statusCallback: `${BASE_URL}/voice`,
-      statusCallbackMethod: 'POST',
       // No timeLimit — defaults to 14400s (4 hours)
     });
     log(call.sid, '📞 OUTBOUND CALL INITIATED', `to=${to}`);
