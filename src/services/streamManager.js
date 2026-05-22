@@ -82,8 +82,10 @@ export function createCallHandler(ws, log) {
 
   // ── STT ──────────────────────────────────────────────────────────────────
 
-  function startListening() {
-    state = 'LISTENING';
+  // resetState=true on initial/normal start; false when restarting mid-turn
+  // to avoid clobbering THINKING/SPEAKING state.
+  function startListening(resetState = true) {
+    if (resetState) state = 'LISTENING';
     stt = createSttStream({
       onInterim(text) {
         // User started speaking while AI is active — interrupt
@@ -99,18 +101,16 @@ export function createCallHandler(ws, log) {
       },
       onError(err) {
         log(callSid, '❌ STT ERROR', err.message);
-        // Restart STT so the call stays functional after an Azure error
-        if (state === 'LISTENING' && !llmAborted) {
+        if (!llmAborted) {
           log(callSid, '🔄 STT RESTART (after error)');
-          startListening();
+          startListening(false); // preserve current state
         }
       },
       onSessionEnd(reason) {
         log(callSid, '⚠  STT SESSION END', reason);
-        // Azure closed the session (timeout, network, etc.) — restart if still active
         if (!llmAborted) {
           log(callSid, '🔄 STT RESTART (after session end)');
-          startListening();
+          startListening(false); // preserve current state
         }
       },
     });
@@ -122,6 +122,18 @@ export function createCallHandler(ws, log) {
     state = 'THINKING';
     llmAborted = false;
     const t0 = Date.now();
+
+    // Safety net: abort the turn after 90s to prevent permanent hangs
+    // (e.g. OpenClaw SSE stream stalls after first response byte)
+    const turnTimer = setTimeout(() => {
+      if (state === 'THINKING' || state === 'SPEAKING') {
+        log(callSid, '⏱  TURN TIMEOUT', 'aborting after 90s — LLM/TTS stall');
+        llmAborted = true;
+        cancelTts?.();
+        cancelTts = null;
+        state = 'LISTENING';
+      }
+    }, 90000);
 
     try {
       // Load context + RAG in parallel
@@ -140,6 +152,7 @@ export function createCallHandler(ws, log) {
       state = 'SPEAKING';
       let fullReply = '';
       let sentenceBuf = '';
+      let firstToken = true;
 
       log(callSid, '🤖 LLM START', `(${Date.now() - t0}ms since user spoke)`);
 
@@ -150,6 +163,10 @@ export function createCallHandler(ws, log) {
 
       for await (const tok of llmStream) {
         if (llmAborted) break;
+        if (firstToken) {
+          log(callSid, '🤖 LLM 1st TOKEN', `(${Date.now() - t0}ms)`);
+          firstToken = false;
+        }
         fullReply += tok;
         sentenceBuf += tok;
 
@@ -194,6 +211,8 @@ export function createCallHandler(ws, log) {
     } catch (err) {
       log(callSid, '❌ PIPELINE ERROR', err.message);
       state = 'LISTENING';
+    } finally {
+      clearTimeout(turnTimer);
     }
   }
 
