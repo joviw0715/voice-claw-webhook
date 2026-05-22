@@ -45,7 +45,12 @@ const recentCalls = new Map(); // callSid → timestamp
 // Entry: Twilio call — greet and start listening
 app.post("/voice", (req, res) => {
   const callSid = req.body?.CallSid || 'unknown';
-  const phone = req.body?.From || 'unknown';
+  const direction = req.body?.Direction || '';
+  // For outbound calls From=Twilio number, To=person being called — use To.
+  // For inbound calls From=person calling — use From.
+  const phone = direction.startsWith('outbound')
+    ? (req.body?.To || 'unknown')
+    : (req.body?.From || 'unknown');
   const callStatus = req.body?.CallStatus || '';
 
   // Twilio posts status callbacks to this same URL when a call ends —

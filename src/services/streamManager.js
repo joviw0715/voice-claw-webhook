@@ -18,6 +18,7 @@ function cleanForTts(text) {
     .replace(/\*+/g, '')           // markdown bold/italic asterisks
     .replace(/#+\s*/g, '')          // markdown headers
     .replace(/[_~`]/g, '')          // other markdown
+    .replace(/^\s*[-•]\s*/u, '')    // bullet/list prefixes (- or •)
     .replace(/^[一-鿿\w]+[：:]\s*/u, '') // LLM name prefix e.g. "祖兒："
     .trim();
 }
