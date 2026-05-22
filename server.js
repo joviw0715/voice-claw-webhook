@@ -256,6 +256,13 @@ app.post("/poll/:callSid", async (req, res) => {
   res.send(recordTwiml(audioUrl));
 });
 
+process.on('uncaughtException', (err) => {
+  console.error(`[${new Date().toISOString()}] [UNCAUGHT EXCEPTION]`, err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error(`[${new Date().toISOString()}] [UNHANDLED REJECTION]`, reason);
+});
+
 const server = app.listen(process.env.PORT || 3000, () => {
   console.log(`[server] running on port ${process.env.PORT || 3000}`);
 });

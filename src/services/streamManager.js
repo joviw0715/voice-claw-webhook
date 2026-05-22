@@ -86,20 +86,24 @@ export function createCallHandler(ws, log) {
   // to avoid clobbering THINKING/SPEAKING state.
   function startListening(resetState = true) {
     if (resetState) state = 'LISTENING';
-    stt = createSttStream({
+    const prevStt = stt;
+    let thisStt;
+    thisStt = createSttStream({
       onInterim(text) {
-        // User started speaking while AI is active — interrupt
+        if (stt !== thisStt) return; // superseded by a newer STT session
         if ((state === 'SPEAKING' || state === 'THINKING') && text.length >= 2) {
           interrupt(`user interim: "${text.slice(0, 30)}"`);
         }
       },
       onFinal(text) {
+        if (stt !== thisStt) return; // superseded
         log(callSid, '👂 STT', `"${text}"`);
         if (state === 'LISTENING' && text.trim().length >= 2) {
           handleUserSpeech(text.trim());
         }
       },
       onError(err) {
+        if (stt !== thisStt) return; // superseded
         log(callSid, '❌ STT ERROR', err.message);
         if (!llmAborted) {
           log(callSid, '🔄 STT RESTART (after error)');
@@ -107,6 +111,7 @@ export function createCallHandler(ws, log) {
         }
       },
       onSessionEnd(reason) {
+        if (stt !== thisStt) return; // superseded — don't chain-restart
         log(callSid, '⚠  STT SESSION END', reason);
         if (!llmAborted) {
           log(callSid, '🔄 STT RESTART (after session end)');
@@ -114,6 +119,9 @@ export function createCallHandler(ws, log) {
         }
       },
     });
+    stt = thisStt;
+    // Close the previous session AFTER the new one is ready to avoid a gap
+    if (prevStt) prevStt.close();
   }
 
   // ── Main pipeline ────────────────────────────────────────────────────────
