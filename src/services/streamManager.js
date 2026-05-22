@@ -69,6 +69,19 @@ export function createCallHandler(ws, log) {
     }
   }
 
+  async function* openRouterWithFallback(messages, phone) {
+    try {
+      for await (const tok of streamQueryOpenRouter(messages)) {
+        yield tok;
+      }
+    } catch (err) {
+      log(callSid, '⚠  OpenRouter failed, falling back to OpenClaw', err.message);
+      for await (const tok of streamQueryLLM(messages, phone)) {
+        yield tok;
+      }
+    }
+  }
+
   // ── WebSocket helpers ────────────────────────────────────────────────────
 
   function sendMedia(audioBuffer) {
@@ -188,9 +201,10 @@ export function createCallHandler(ws, log) {
       const useOpenRouter = !!process.env.LLM_API_KEY && !TOOL_QUERY_RE.test(userText);
       log(callSid, '🤖 LLM START', `${useOpenRouter ? 'OpenRouter' : 'OpenClaw'} (${Date.now() - t0}ms since user spoke)`);
 
+      const messages = [{ role: 'system', content: systemPrompt }, ...updatedHistory];
       const llmStream = useOpenRouter
-        ? streamQueryOpenRouter([{ role: 'system', content: systemPrompt }, ...updatedHistory])
-        : streamQueryLLM([{ role: 'system', content: systemPrompt }, ...updatedHistory], phone);
+        ? openRouterWithFallback(messages, phone)
+        : streamQueryLLM(messages, phone);
 
       for await (const tok of llmStream) {
         if (llmAborted) break;
