@@ -99,6 +99,19 @@ export function createCallHandler(ws, log) {
       },
       onError(err) {
         log(callSid, '❌ STT ERROR', err.message);
+        // Restart STT so the call stays functional after an Azure error
+        if (state === 'LISTENING' && !llmAborted) {
+          log(callSid, '🔄 STT RESTART (after error)');
+          startListening();
+        }
+      },
+      onSessionEnd(reason) {
+        log(callSid, '⚠  STT SESSION END', reason);
+        // Azure closed the session (timeout, network, etc.) — restart if still active
+        if (!llmAborted) {
+          log(callSid, '🔄 STT RESTART (after session end)');
+          startListening();
+        }
       },
     });
   }
@@ -188,10 +201,17 @@ export function createCallHandler(ws, log) {
     return new Promise((resolve) => {
       const handle = synthesizeToStream(text, {
         onChunk(buf) { if (!llmAborted) sendMedia(buf); },
-        onDone() { cancelTts = null; resolve(); },
-        onError(err) { log(callSid, '⚠  TTS ERR', err.message); cancelTts = null; resolve(); },
+        onDone() { clearTimeout(hangGuard); cancelTts = null; resolve(); },
+        onError(err) { clearTimeout(hangGuard); log(callSid, '⚠  TTS ERR', err.message); cancelTts = null; resolve(); },
       });
-      cancelTts = () => { handle.cancel(); resolve(); };
+      cancelTts = () => { clearTimeout(hangGuard); handle.cancel(); resolve(); };
+      // Safety net: if MiniMax stream hangs with no response, resolve after 45s
+      const hangGuard = setTimeout(() => {
+        log(callSid, '⚠  TTS HANG', 'no response in 45s — aborting sentence');
+        handle.cancel();
+        cancelTts = null;
+        resolve();
+      }, 45000);
     });
   }
 
@@ -243,7 +263,8 @@ export function createCallHandler(ws, log) {
       }
     },
 
-    onClose() {
+    onClose(code, reason) {
+      log(callSid, '🔌 WS CLOSE', `code=${code} reason=${reason || '(none)'} state=${state}`);
       close();
     },
   };

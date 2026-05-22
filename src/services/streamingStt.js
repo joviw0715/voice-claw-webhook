@@ -4,8 +4,9 @@ import * as sdk from 'microsoft-cognitiveservices-speech-sdk';
 // Callbacks:
 //   onInterim(text) — partial recognition (user is still speaking)
 //   onFinal(text)   — final recognition (phrase complete)
-//   onError(err)    — recognition error
-export function createSttStream({ onInterim, onFinal, onError }) {
+//   onError(err)    — recognition error or session end
+//   onSessionEnd()  — optional, called when Azure closes the session
+export function createSttStream({ onInterim, onFinal, onError, onSessionEnd }) {
   const speechConfig = sdk.SpeechConfig.fromSubscription(
     process.env.AZURE_SPEECH_KEY,
     process.env.AZURE_SPEECH_REGION,
@@ -28,10 +29,20 @@ export function createSttStream({ onInterim, onFinal, onError }) {
     }
   };
 
+  // Log ALL cancellation reasons (not just errors) so session expiry is visible
   recognizer.canceled = (_s, e) => {
+    const reasonName = sdk.CancellationReason[e.reason] ?? String(e.reason);
     if (e.reason === sdk.CancellationReason.Error) {
-      onError(new Error(`STT canceled: ${e.errorDetails}`));
+      onError(new Error(`STT canceled [${reasonName}]: ${e.errorDetails}`));
+    } else {
+      // EndOfStream, etc. — session is done but not an application error
+      onSessionEnd?.(`canceled:${reasonName}`);
     }
+  };
+
+  // Fires when the Azure session stops (after stopContinuousRecognitionAsync or timeout)
+  recognizer.sessionStopped = (_s, _e) => {
+    onSessionEnd?.('sessionStopped');
   };
 
   recognizer.startContinuousRecognitionAsync(

@@ -265,6 +265,6 @@ const wss = new WebSocketServer({ server, path: '/stream' });
 wss.on('connection', (ws) => {
   const handler = createCallHandler(ws, log);
   ws.on('message', (data) => handler.onMessage(data.toString()));
-  ws.on('close', () => handler.onClose());
+  ws.on('close', (code, reason) => handler.onClose(code, reason?.toString() || ''));
   ws.on('error', (err) => console.error('[ws] error:', err.message));
 });
