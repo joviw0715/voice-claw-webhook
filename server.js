@@ -275,8 +275,10 @@ const server = app.listen(process.env.PORT || 3000, () => {
 // WebSocket server for Twilio Media Streams (used when USE_MEDIA_STREAMS=true)
 const wss = new WebSocketServer({ server, path: '/stream' });
 wss.on('connection', (ws) => {
+  // Ping every 20s to keep the connection alive through proxies (Zeabur/Nginx/Cloudflare)
+  const pingTimer = setInterval(() => { if (ws.readyState === ws.OPEN) ws.ping(); }, 20000);
   const handler = createCallHandler(ws, log);
   ws.on('message', (data) => handler.onMessage(data.toString()));
-  ws.on('close', (code, reason) => handler.onClose(code, reason?.toString() || ''));
+  ws.on('close', (code, reason) => { clearInterval(pingTimer); handler.onClose(code, reason?.toString() || ''); });
   ws.on('error', (err) => console.error('[ws] error:', err.message));
 });
