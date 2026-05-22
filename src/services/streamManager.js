@@ -214,7 +214,7 @@ export function createCallHandler(ws, log) {
           return;
         }
 
-        log(callSid, '✅ TURN DONE', `"${cleanReply.slice(0, 80)}" (${Date.now() - t0}ms)`);
+        log(callSid, '✅ TURN DONE', `"${cleanReply.slice(0, 80).replace(/[\n\r]/g, '↵')}" (${Date.now() - t0}ms)`);
         await saveContext(callSid, [
           ...updatedHistory,
           { role: 'assistant', content: cleanReply },
