@@ -81,6 +81,38 @@ export async function queryLLM(messages, phone) {
   throw lastErr;
 }
 
+// Fast intent classifier — 'tools' if query needs web search/reminders/memory, else 'chat'.
+// Runs in parallel with Redis context loading so the overhead is hidden.
+export async function classifyIntent(userText) {
+  const apiKey = process.env.LLM_API_KEY;
+  if (!apiKey) return 'tools'; // no OpenRouter key — always use OpenClaw
+
+  try {
+    const response = await axios.post(LLM_BASE_URL, {
+      model: process.env.LLM_MODEL || FREE_MODELS[0],
+      messages: [
+        {
+          role: 'system',
+          content: 'Reply with only one word: "tools" or "chat". Reply "tools" if the message requires real-time web search (weather, news, prices, current time/date), scheduling a reminder, or memory recall. Reply "chat" for all other conversation.',
+        },
+        { role: 'user', content: userText },
+      ],
+      max_tokens: 5,
+    }, {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      timeout: 5000,
+    });
+
+    const word = response.data.choices[0]?.message?.content?.trim().toLowerCase() ?? '';
+    return word.startsWith('tool') ? 'tools' : 'chat';
+  } catch {
+    return 'tools'; // on classifier error, default to OpenClaw for safety
+  }
+}
+
 // Streaming via OpenRouter — for non-tool conversational queries where speed matters
 export async function* streamQueryOpenRouter(messages) {
   const apiKey = process.env.LLM_API_KEY;

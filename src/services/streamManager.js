@@ -2,7 +2,7 @@ import twilio from 'twilio';
 import { decode as mulawDecode } from '../utils/mulaw.js';
 import { createSttStream } from './streamingStt.js';
 import { synthesizeToStream } from './streamingTts.js';
-import { streamQueryLLM, streamQueryOpenRouter } from './openClawLlm.js';
+import { streamQueryLLM, streamQueryOpenRouter, classifyIntent } from './openClawLlm.js';
 import { getContext, saveContext, getUserMemory } from './redisClient.js';
 import { retrieveKnowledge } from './qdrantClient.js';
 
@@ -14,9 +14,6 @@ const SENTENCE_RE = /[。？！\n]/;
 
 // Cantonese + English farewell phrases
 const FAREWELL_RE = /拜拜|再見|掛線|掛電話|掰掰|goodbye|bye/i;
-
-// Queries that need real-time tool calls (weather, current time/date) — route to OpenClaw
-const TOOL_QUERY_RE = /天氣|氣溫|溫度|幾多度|幾度|下雨|落雨|預報|幾點|幾號|日期/;
 
 // Strip non-speakable characters before TTS: emoji, markdown formatting, name prefixes
 function cleanForTts(text) {
@@ -181,12 +178,13 @@ export function createCallHandler(ws, log) {
 
     try {
       // Load context + RAG in parallel
-      const [history, memory, knowledge] = await Promise.all([
+      const [history, memory, knowledge, intent] = await Promise.all([
         getContext(callSid),
         getUserMemory(phone),
         retrieveKnowledge(userText),
+        classifyIntent(userText),
       ]);
-      log(callSid, '📚 CONTEXT', `history=${history.length} knowledge=${knowledge.length} (${Date.now() - t0}ms)`);
+      log(callSid, '📚 CONTEXT', `history=${history.length} knowledge=${knowledge.length} intent=${intent} (${Date.now() - t0}ms)`);
 
       if (llmAborted) return;
 
@@ -198,7 +196,7 @@ export function createCallHandler(ws, log) {
       let sentenceBuf = '';
       let firstToken = true;
 
-      const useOpenRouter = !!process.env.LLM_API_KEY && !TOOL_QUERY_RE.test(userText);
+      const useOpenRouter = !!process.env.LLM_API_KEY && intent === 'chat';
       log(callSid, '🤖 LLM START', `${useOpenRouter ? 'OpenRouter' : 'OpenClaw'} (${Date.now() - t0}ms since user spoke)`);
 
       const messages = [{ role: 'system', content: systemPrompt }, ...updatedHistory];
