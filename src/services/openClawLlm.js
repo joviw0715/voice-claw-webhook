@@ -3,7 +3,7 @@ import axios from 'axios';
 const LLM_BASE_URL = process.env.LLM_BASE_URL || 'https://openrouter.ai/api/v1/chat/completions';
 
 const FREE_MODELS = [
-  'deepseek/deepseek-v4-flash:free',
+  'deepseek/deepseek-chat:free',
   'meta-llama/llama-3.3-70b-instruct:free',
   'google/gemma-4-31b-it:free',
   'nvidia/nemotron-3-super-120b-a12b:free',
