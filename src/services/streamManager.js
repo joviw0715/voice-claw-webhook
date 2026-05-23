@@ -84,7 +84,7 @@ export function createCallHandler(ws, log) {
       // Only send ambient during silence — TTS sends its own mixed chunks when speaking
       if (state === 'SPEAKING' || state === 'IDLE' || ws.readyState !== ws.OPEN) return;
       const chunk = getNextAmbientMulawChunk(160); // 20ms @ 8kHz μ-law
-      if (chunk) sendMedia(chunk);
+      if (chunk) sendAmbient(chunk);
     }, 20);
   }
 
@@ -139,6 +139,16 @@ export function createCallHandler(ws, log) {
   function sendMedia(audioBuffer) {
     if (ws.readyState !== ws.OPEN) return;
     ttsLastChunkAt = Date.now();
+    ws.send(JSON.stringify({
+      event: 'media',
+      streamSid,
+      media: { payload: audioBuffer.toString('base64') },
+    }));
+  }
+
+  // Send ambient audio without updating ttsLastChunkAt — ambient must not block STT echo suppression
+  function sendAmbient(audioBuffer) {
+    if (ws.readyState !== ws.OPEN) return;
     ws.send(JSON.stringify({
       event: 'media',
       streamSid,
