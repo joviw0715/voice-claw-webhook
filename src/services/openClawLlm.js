@@ -117,7 +117,7 @@ export async function classifyIntent(userText) {
 // Returns a JSON object of facts, or null if extraction fails / not enough history.
 export async function extractMemoryFacts(history, existingMemory = {}) {
   const apiKey = process.env.LLM_API_KEY;
-  if (!apiKey || history.length < 4) return null; // need at least 2 full turns
+  if (!apiKey || history.length < 2) return null; // need at least 1 full turn
 
   const today = new Date().toISOString().slice(0, 10);
   const transcript = history
@@ -153,9 +153,15 @@ Existing memory (for context, do not repeat unchanged): ${JSON.stringify(existin
     });
 
     const content = response.data.choices[0]?.message?.content?.trim() ?? '';
-    const json = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-    return JSON.parse(json);
-  } catch {
+    // Extract the first {...} block — handles prose prefix/suffix from the model
+    const match = content.match(/\{[\s\S]*\}/);
+    if (!match) {
+      console.warn('[extractMemoryFacts] no JSON object in response:', content.slice(0, 200));
+      return null;
+    }
+    return JSON.parse(match[0]);
+  } catch (err) {
+    console.warn('[extractMemoryFacts] failed:', err.response?.data?.error?.message || err.message);
     return null;
   }
 }

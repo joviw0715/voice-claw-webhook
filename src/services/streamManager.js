@@ -75,7 +75,10 @@ export function createCallHandler(ws, log) {
       if (history.length < 4) return; // less than 2 full turns — not worth saving
       const existingMemory = await getUserMemory(phone);
       const facts = await extractMemoryFacts(history, existingMemory);
-      if (!facts || Object.keys(facts).length === 0) return;
+      if (!facts || Object.keys(facts).length === 0) {
+        log(callSid, '⚠  MEMORY: extraction returned null/empty');
+        return;
+      }
       await updateUserMemory(phone, facts);
       log(callSid, '💾 MEMORY SAVED', Object.keys(facts).join(', '));
     } catch (err) {
