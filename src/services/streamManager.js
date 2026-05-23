@@ -39,10 +39,23 @@ function cleanForTts(text) {
     .trim();
 }
 
-// Returns true if text contains no Chinese characters — i.e. it's the model's internal
-// English reasoning / chain-of-thought, not a real Cantonese reply.
+// Returns true if text is predominantly English/non-Chinese — i.e. LLM chain-of-thought.
+// Ratio-based: less than 40% Chinese characters = thinking. This catches English sentences
+// that quote Chinese words (e.g. 'clarify what "攰" means').
 function isThinkingText(text) {
-  return !/[一-鿿㐀-䶿＀-￯]/.test(text);
+  const clean = text.replace(/\s/g, '');
+  if (!clean) return true;
+  const chinese = (clean.match(/[一-鿿㐀-䶿]/g) || []).length;
+  return chinese / clean.length < 0.40;
+}
+
+// If a thinking sentence has a Chinese suffix (model transitioning from thinking to answer),
+// extract and return just the Chinese portion. Returns null if nothing worth speaking.
+function extractChineseSuffix(text) {
+  const m = text.match(/[一-鿿㐀-䶿，。？！、：；""（）【】…]{4,}.*/);
+  if (!m) return null;
+  const candidate = m[0].replace(/[A-Za-z0-9\s.,!?'"()[\]{}@#$%^&*_+=|\\/<>~`]+$/, '').trim();
+  return candidate.length >= 4 ? candidate : null;
 }
 
 // Extract user's name from conversation history using common Cantonese/English self-introduction patterns.
@@ -356,11 +369,15 @@ export function createCallHandler(ws, log) {
       // For OpenClaw (tool queries): play an immediate Cantonese acknowledgment so the
       // user gets feedback during the long processing time instead of silence.
       if (!useGemini && !useGroq && !useOpenRouter && !llmAborted) {
+        let filler = '好，等我幫你查下';
+        if (/天氣|落雨|氣溫|溫度|晴天/.test(userText)) filler = '等我查下天氣先';
+        else if (/幾點|時間|日期|星期/.test(userText)) filler = '等我睇下而家幾點';
+        else if (/新聞|消息/.test(userText)) filler = '等我睇下最新消息先';
         sendClear();
         state = 'SPEAKING';
         firstTts = false;
-        log(callSid, '🔊 TTS (filler)', '"好，等我幫你查下"');
-        await speakSentence('好，等我幫你查下');
+        log(callSid, '🔊 TTS (filler)', `"${filler}"`);
+        await speakSentence(filler);
       }
 
       for await (const tok of llmStream) {
@@ -379,7 +396,17 @@ export function createCallHandler(ws, log) {
             const sentence = cleanForTts(part);
             if (sentence.length >= 2 && !llmAborted) {
               if (isThinkingText(sentence)) {
-                log(callSid, '🔕 SKIP THINKING', `"${sentence.slice(0, 40)}"`);
+                const chinese = extractChineseSuffix(sentence);
+                if (chinese && !isThinkingText(chinese)) {
+                  log(callSid, '🔕 EXTRACT FROM THINKING', `"${chinese.slice(0, 40)}"`);
+                  // fall through with extracted Chinese portion
+                  const extracted = chinese;
+                  if (firstTts) { sendClear(); state = 'SPEAKING'; firstTts = false; }
+                  log(callSid, '🔊 TTS', `"${extracted}"`);
+                  await speakSentence(extracted);
+                } else {
+                  log(callSid, '🔕 SKIP THINKING', `"${sentence.slice(0, 40)}"`);
+                }
                 continue;
               }
               if (firstTts) {

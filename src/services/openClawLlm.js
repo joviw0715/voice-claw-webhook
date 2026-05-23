@@ -175,7 +175,7 @@ export async function* streamQueryGemini(messages) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY not set');
 
-  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
   const response = await axios.post(
     `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`,
     { messages, model, stream: true },
