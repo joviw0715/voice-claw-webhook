@@ -34,25 +34,33 @@ export function synthesizeToStream(text, { onChunk, onDone, onError }) {
 
   (async () => {
     try {
+      const backgroundSound = process.env.MINIMAX_BACKGROUND_SOUND;
+      const body = {
+        model: process.env.MINIMAX_MODEL || 'speech-02-turbo',
+        text,
+        stream: true,
+        language_boost: process.env.MINIMAX_LANGUAGE_BOOST || 'Chinese,Yue',
+        voice_setting: {
+          voice_id: process.env.MINIMAX_VOICE_ID || 'Cantonese_GentleLady',
+          speed: 1.0,
+          vol: 1.0,
+          pitch: 0,
+        },
+        audio_setting: {
+          format: 'pcm',
+          sample_rate: 16000,
+          channel: 1,
+        },
+      };
+      if (backgroundSound) {
+        body.background_setting = {
+          background_audio: backgroundSound,
+          volume: parseFloat(process.env.MINIMAX_BACKGROUND_VOLUME || '0.15'),
+        };
+      }
       const response = await axios.post(
         'https://api.minimax.io/v1/t2a_v2',
-        {
-          model: process.env.MINIMAX_MODEL || 'speech-02-turbo',
-          text,
-          stream: true,
-          language_boost: process.env.MINIMAX_LANGUAGE_BOOST || 'Chinese,Yue',
-          voice_setting: {
-            voice_id: process.env.MINIMAX_VOICE_ID || 'Cantonese_GentleLady',
-            speed: 1.0,
-            vol: 1.0,
-            pitch: 0,
-          },
-          audio_setting: {
-            format: 'pcm',
-            sample_rate: 16000,
-            channel: 1,
-          },
-        },
+        body,
         {
           headers: {
             Authorization: `Bearer ${process.env.MINIMAX_API_KEY}`,

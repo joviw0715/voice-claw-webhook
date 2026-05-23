@@ -341,7 +341,9 @@ export function createCallHandler(ws, log) {
         // exchange is the first thing captured and can be sliced out of history later
         if (!memory.name) summarizeAndSaveMemory();
         if (userSaidFarewell) {
-          log(callSid, '👋 FAREWELL', 'user said goodbye — hanging up');
+          log(callSid, '👋 FAREWELL', 'waiting for audio to finish before hangup');
+          // Delay so Twilio finishes playing the farewell audio before we disconnect
+          await new Promise(r => setTimeout(r, 3000));
           await hangupCall();
         }
       }
