@@ -353,6 +353,16 @@ export function createCallHandler(ws, log) {
             ? openRouterWithFallback(messages, phone)
             : streamQueryLLM(messages, phone);
 
+      // For OpenClaw (tool queries): play an immediate Cantonese acknowledgment so the
+      // user gets feedback during the long processing time instead of silence.
+      if (!useGemini && !useGroq && !useOpenRouter && !llmAborted) {
+        sendClear();
+        state = 'SPEAKING';
+        firstTts = false;
+        log(callSid, '🔊 TTS (filler)', '"好，等我幫你查下"');
+        await speakSentence('好，等我幫你查下');
+      }
+
       for await (const tok of llmStream) {
         if (llmAborted) break;
         if (firstToken) {

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { StringDecoder } from 'string_decoder';
 
 const LLM_BASE_URL = process.env.LLM_BASE_URL || 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -149,9 +150,10 @@ export async function* streamQueryOpenRouter(messages) {
     timeout: 20000,
   });
 
+  const decoder = new StringDecoder('utf8');
   let buf = '';
   for await (const chunk of response.data) {
-    buf += chunk.toString('utf8');
+    buf += decoder.write(chunk);
     const lines = buf.split('\n');
     buf = lines.pop() ?? '';
     for (const line of lines) {
@@ -188,9 +190,10 @@ export async function* streamQueryGemini(messages) {
     },
   );
 
+  const decoder = new StringDecoder('utf8');
   let buf = '';
   for await (const chunk of response.data) {
-    buf += chunk.toString('utf8');
+    buf += decoder.write(chunk);
     const lines = buf.split('\n');
     buf = lines.pop() ?? '';
     for (const line of lines) {
@@ -228,9 +231,10 @@ export async function* streamQueryGroq(messages) {
     timeout: 15000,
   });
 
+  const decoder = new StringDecoder('utf8');
   let buf = '';
   for await (const chunk of response.data) {
-    buf += chunk.toString('utf8');
+    buf += decoder.write(chunk);
     const lines = buf.split('\n');
     buf = lines.pop() ?? '';
     for (const line of lines) {
@@ -281,9 +285,10 @@ export async function* streamQueryLLM(messages, phone) {
   }
 
   // SSE streaming: parse data: lines and yield delta content tokens
+  const decoder = new StringDecoder('utf8');
   let buf = '';
   for await (const chunk of response.data) {
-    buf += chunk.toString('utf8');
+    buf += decoder.write(chunk);
     const lines = buf.split('\n');
     buf = lines.pop() ?? '';
     for (const line of lines) {
