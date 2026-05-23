@@ -302,10 +302,10 @@ export function createCallHandler(ws, log) {
       const updatedHistory = [...history, { role: 'user', content: userText }].slice(-6);
       const systemPrompt = `${SYSTEM_PROMPT}\nUser memory: ${JSON.stringify(memory)}\nKnowledge: ${knowledge.join('\n')}`;
 
-      state = 'SPEAKING';
       let fullReply = '';
       let sentenceBuf = '';
       let firstToken = true;
+      let firstTts = true;
 
       const useOpenRouter = !!process.env.LLM_API_KEY && intent === 'chat';
       log(callSid, '🤖 LLM START', `${useOpenRouter ? 'OpenRouter' : 'OpenClaw'} (${Date.now() - t0}ms since user spoke)`);
@@ -330,6 +330,11 @@ export function createCallHandler(ws, log) {
           for (const part of parts) {
             const sentence = cleanForTts(part);
             if (sentence.length >= 2 && !llmAborted) {
+              if (firstTts) {
+                sendClear(); // flush buffered ambient so TTS plays immediately
+                state = 'SPEAKING';
+                firstTts = false;
+              }
               log(callSid, '🔊 TTS', `"${sentence}"`);
               await speakSentence(sentence);
             }
@@ -340,6 +345,10 @@ export function createCallHandler(ws, log) {
       // Flush remainder
       const tail = cleanForTts(sentenceBuf);
       if (tail.length >= 2 && !llmAborted) {
+        if (firstTts) {
+          sendClear();
+          state = 'SPEAKING';
+        }
         log(callSid, '🔊 TTS (tail)', `"${tail}"`);
         await speakSentence(tail);
       }
