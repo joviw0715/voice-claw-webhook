@@ -129,21 +129,13 @@ export async function extractMemoryFacts(history, existingMemory = {}) {
       messages: [
         {
           role: 'system',
-          content: `Extract facts about the customer from this Cantonese call transcript. Return ONLY a valid JSON object — no markdown, no extra text. Only include fields where information was clearly mentioned in this call:
-{
-  "name": "customer preferred name or nickname",
-  "location": "where they live",
-  "health_notes": "health, mobility, or medical info",
-  "interests": "hobbies or topics they enjoy",
-  "family": "family members mentioned",
-  "last_call_summary": "1 sentence in Traditional Chinese summarising this call",
-  "last_call_date": "${today}"
-}
-Existing memory (for context, do not repeat unchanged): ${JSON.stringify(existingMemory)}`,
+          content: `Extract facts about the customer from this Cantonese call transcript. Return ONLY a compact one-line JSON object — no markdown, no extra text, no null values, omit fields not mentioned:
+{"name":"...","location":"...","health_notes":"...","interests":"...","family":"...","last_call_summary":"...","last_call_date":"${today}"}
+Existing memory (do not repeat unchanged fields): ${JSON.stringify(existingMemory)}`,
         },
         { role: 'user', content: `以下係電話對話記錄：\n\n${transcript}` },
       ],
-      max_tokens: 300,
+      max_tokens: 250,
     }, {
       headers: {
         Authorization: `Bearer ${apiKey}`,
