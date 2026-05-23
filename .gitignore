@@ -1,4 +1,5 @@
 node_modules/
 .env
-audio/
+audio/*.mp3
+audio/*.wav
 *.log
