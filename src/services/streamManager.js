@@ -2,7 +2,7 @@ import twilio from 'twilio';
 import { decode as mulawDecode } from '../utils/mulaw.js';
 import { createSttStream } from './streamingStt.js';
 import { synthesizeToStream } from './streamingTts.js';
-import { streamQueryLLM, streamQueryOpenRouter, classifyIntent, extractMemoryFacts } from './openClawLlm.js';
+import { streamQueryLLM, streamQueryOpenRouter, classifyIntent } from './openClawLlm.js';
 import { getContext, saveContext, getUserMemory, updateUserMemory } from './redisClient.js';
 import { retrieveKnowledge } from './qdrantClient.js';
 
@@ -38,7 +38,23 @@ function cleanForTts(text) {
     .trim();
 }
 
-// Track active stream handlers per callSid so reconnects displace the old handler
+// Extract user's name from conversation history using common Cantonese/English self-introduction patterns.
+// No LLM needed — these patterns are simple and reliable.
+function extractNameFromHistory(history) {
+  for (const msg of history) {
+    if (msg.role !== 'user') continue;
+    const t = msg.content;
+    let m;
+    if ((m = t.match(/我叫([阿小大老細]?[一-鿿]{1,4})/))) return m[1];
+    if ((m = t.match(/我係([阿小大老細]?[一-鿿]{1,4})/))) return m[1];
+    if ((m = t.match(/叫我([阿小大老細]?[一-鿿]{1,4})/))) return m[1];
+    if ((m = t.match(/my name is ([A-Za-z]+)/i))) return m[1];
+    if ((m = t.match(/i'?m ([A-Za-z]+)/i))) return m[1];
+  }
+  return null;
+}
+
+
 const activeStreams = new Map(); // callSid → close()
 
 // OpenClaw sometimes returns an error string instead of an AI reply
@@ -72,14 +88,11 @@ export function createCallHandler(ws, log) {
     if (phone === 'unknown') return;
     try {
       const history = await getContext(callSid);
-      if (history.length < 2) return; // need at least 1 full turn
-      const facts = await extractMemoryFacts(history);
-      if (!facts || Object.keys(facts).length === 0) {
-        log(callSid, '⚠  MEMORY: extraction returned null/empty');
-        return;
-      }
-      await updateUserMemory(phone, facts);
-      log(callSid, '💾 MEMORY SAVED', Object.keys(facts).join(', '));
+      if (history.length < 2) return;
+      const name = extractNameFromHistory(history);
+      if (!name) return;
+      await updateUserMemory(phone, { name });
+      log(callSid, '💾 MEMORY SAVED', `name=${name}`);
     } catch (err) {
       log(callSid, '⚠  MEMORY SAVE ERR', err.message);
     }
