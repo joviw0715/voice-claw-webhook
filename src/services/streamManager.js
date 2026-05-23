@@ -39,6 +39,12 @@ function cleanForTts(text) {
     .trim();
 }
 
+// Returns true if text contains no Chinese characters — i.e. it's the model's internal
+// English reasoning / chain-of-thought, not a real Cantonese reply.
+function isThinkingText(text) {
+  return !/[一-鿿㐀-䶿＀-￯]/.test(text);
+}
+
 // Extract user's name from conversation history using common Cantonese/English self-introduction patterns.
 // No LLM needed — these patterns are simple and reliable.
 function extractNameFromHistory(history) {
@@ -362,6 +368,10 @@ export function createCallHandler(ws, log) {
           for (const part of parts) {
             const sentence = cleanForTts(part);
             if (sentence.length >= 2 && !llmAborted) {
+              if (isThinkingText(sentence)) {
+                log(callSid, '🔕 SKIP THINKING', `"${sentence.slice(0, 40)}"`);
+                continue;
+              }
               if (firstTts) {
                 sendClear(); // flush buffered ambient so TTS plays immediately
                 state = 'SPEAKING';
@@ -376,7 +386,7 @@ export function createCallHandler(ws, log) {
 
       // Flush remainder
       const tail = cleanForTts(sentenceBuf);
-      if (tail.length >= 2 && !llmAborted) {
+      if (tail.length >= 2 && !llmAborted && !isThinkingText(tail)) {
         if (firstTts) {
           sendClear();
           state = 'SPEAKING';
