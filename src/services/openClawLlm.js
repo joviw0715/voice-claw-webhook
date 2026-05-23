@@ -120,6 +120,9 @@ export async function extractMemoryFacts(history, existingMemory = {}) {
   if (!apiKey || history.length < 4) return null; // need at least 2 full turns
 
   const today = new Date().toISOString().slice(0, 10);
+  const transcript = history
+    .map(m => `${m.role === 'user' ? '用戶' : '祖兒'}: ${m.content}`)
+    .join('\n');
   try {
     const response = await axios.post(LLM_BASE_URL, {
       model: process.env.LLM_MODEL || FREE_MODELS[0],
@@ -138,7 +141,7 @@ export async function extractMemoryFacts(history, existingMemory = {}) {
 }
 Existing memory (for context, do not repeat unchanged): ${JSON.stringify(existingMemory)}`,
         },
-        ...history,
+        { role: 'user', content: `以下係電話對話記錄：\n\n${transcript}` },
       ],
       max_tokens: 300,
     }, {
