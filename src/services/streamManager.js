@@ -5,6 +5,7 @@ import { synthesizeToStream } from './streamingTts.js';
 import { streamQueryLLM, streamQueryOpenRouter, classifyIntent } from './openClawLlm.js';
 import { getContext, saveContext, getUserMemory, updateUserMemory } from './redisClient.js';
 import { retrieveKnowledge } from './qdrantClient.js';
+import { getNextAmbientMulawChunk } from '../utils/ambientMixer.js';
 
 const SYSTEM_PROMPT = process.env.SYSTEM_PROMPT ||
   '你係一個用廣東話嘅 AI 陪伴照護員，你的名字叫祖兒。如果 User memory 有用戶名字就用佢嘅名字稱呼佢；如果唔知名字，對話開始時先有禮貌地問佢點稱呼，然後一直用佢嘅名字。你係語音通話，唔係文字，所以：絕對禁止任何 markdown、bullet point、清單、表格、時間表、數字列表、標題；唔好長篇大論；每次只講一個意思、一句話。規則：全程廣東話，語速慢，句子短，一次一條問；安撫陪伴；佢嘅問題如果你有背景資料，識答就用口語簡單答；絕對唔好糾正錯誤記憶，用重述或選項式問題；不確定或急症徵象引導搵真人幫手；End Call 前必須有禮貌地跟用戶說再見';
@@ -73,14 +74,26 @@ export function createCallHandler(ws, log) {
   let state = 'IDLE';
   let cancelTts = null;
   let llmAborted = false;
-  let ttsEndedAt = 0;    // when last AI speech finished (echo suppression for onFinal)
-  let ttsLastChunkAt = 0; // when last TTS audio chunk was sent (echo suppression for onInterim)
+  let ttsEndedAt = 0;
+  let ttsLastChunkAt = 0;
+  let ambientTimer = null; // continuous background audio loop
+
+  function startAmbientLoop() {
+    if (ambientTimer) return;
+    ambientTimer = setInterval(() => {
+      // Only send ambient during silence — TTS sends its own mixed chunks when speaking
+      if (state === 'SPEAKING' || state === 'IDLE' || ws.readyState !== ws.OPEN) return;
+      const chunk = getNextAmbientMulawChunk(160); // 20ms @ 8kHz μ-law
+      if (chunk) sendMedia(chunk);
+    }, 20);
+  }
 
   function close() {
     stt?.close();
     llmAborted = true;
     cancelTts?.();
     cancelTts = null;
+    if (ambientTimer) { clearInterval(ambientTimer); ambientTimer = null; }
     activeStreams.delete(callSid);
   }
 
@@ -395,6 +408,7 @@ export function createCallHandler(ws, log) {
         activeStreams.set(callSid, close);
 
         log(callSid, '🎙️  STREAM START', `from=${phone}`);
+        startAmbientLoop();
 
         // Load user memory to personalise greeting, then play it.
         // Known user → greet by name. Unknown user → ask for their name.

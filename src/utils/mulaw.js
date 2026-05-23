@@ -11,3 +11,25 @@ export function decode(mulawBuffer) {
   }
   return pcm;
 }
+
+// G.711 μ-law encode: 16-bit signed PCM sample → 8-bit μ-law byte
+export function encodeSample(s16) {
+  const BIAS = 33;
+  let sign = 0;
+  if (s16 < 0) { s16 = -s16; sign = 0x80; }
+  s16 += BIAS;
+  if (s16 > 32767) s16 = 32767;
+  let exp = 7;
+  for (let mask = 0x4000; (s16 & mask) === 0 && exp > 0; exp--, mask >>= 1) {}
+  return (~(sign | (exp << 4) | ((s16 >> (exp + 3)) & 0x0F))) & 0xFF;
+}
+
+// PCM16LE @16kHz → μ-law @8kHz via 2:1 decimation (take every other sample)
+export function encodePcm16ToMulaw8k(pcmBuf) {
+  const outLen = Math.floor(pcmBuf.length / 4);
+  const out = Buffer.allocUnsafe(outLen);
+  for (let i = 0; i < outLen; i++) {
+    out[i] = encodeSample(pcmBuf.readInt16LE(i * 4));
+  }
+  return out;
+}
