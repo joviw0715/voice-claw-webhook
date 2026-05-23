@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { mixAmbient } from '../utils/ambientMixer.js';
 
 // G.711 μ-law encoder: 16-bit signed PCM sample → 8-bit μ-law byte
 function encodeMuLaw(s16) {
@@ -97,7 +98,8 @@ export function synthesizeToStream(text, { onChunk, onDone, onError }) {
             }
             const hexAudio = json.data?.audio;
             if (hexAudio && hexAudio.length > 0 && !cancelled) {
-              onChunk(pcm16ToMulaw8k(Buffer.from(hexAudio, 'hex')));
+              const pcm = mixAmbient(Buffer.from(hexAudio, 'hex'));
+              onChunk(pcm16ToMulaw8k(pcm));
             }
           } catch (parseErr) {
             if (!cancelled) onError(parseErr);
