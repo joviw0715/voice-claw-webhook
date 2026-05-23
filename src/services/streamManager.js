@@ -81,8 +81,10 @@ export function createCallHandler(ws, log) {
   function startAmbientLoop() {
     if (ambientTimer) return;
     ambientTimer = setInterval(() => {
-      // Only send ambient during silence — TTS sends its own mixed chunks when speaking
-      if (state === 'SPEAKING' || state === 'IDLE' || ws.readyState !== ws.OPEN) return;
+      if (state === 'IDLE' || ws.readyState !== ws.OPEN) return;
+      // Stop ambient only when TTS is actively sending chunks — not just when state is SPEAKING.
+      // This fills the gap between LLM start and first TTS chunk with continuous ambient.
+      if (Date.now() - ttsLastChunkAt < 200) return;
       const chunk = getNextAmbientMulawChunk(160); // 20ms @ 8kHz μ-law
       if (chunk) sendAmbient(chunk);
     }, 20);
