@@ -115,11 +115,10 @@ export async function classifyIntent(userText) {
 
 // Extract customer facts from a call transcript for persistent user memory.
 // Returns a JSON object of facts, or null if extraction fails / not enough history.
-export async function extractMemoryFacts(history, existingMemory = {}) {
+export async function extractMemoryFacts(history) {
   const apiKey = process.env.LLM_API_KEY;
   if (!apiKey || history.length < 2) return null; // need at least 1 full turn
 
-  const today = new Date().toISOString().slice(0, 10);
   const transcript = history
     .map(m => `${m.role === 'user' ? '用戶' : '祖兒'}: ${m.content}`)
     .join('\n');
@@ -129,13 +128,11 @@ export async function extractMemoryFacts(history, existingMemory = {}) {
       messages: [
         {
           role: 'system',
-          content: `Extract facts about the customer from this Cantonese call transcript. Return ONLY a compact one-line JSON object — no markdown, no extra text, no null values, omit fields not mentioned:
-{"name":"...","location":"...","health_notes":"...","interests":"...","family":"...","last_call_summary":"...","last_call_date":"${today}"}
-Existing memory (do not repeat unchanged fields): ${JSON.stringify(existingMemory)}`,
+          content: 'Find the customer\'s name or nickname from this Cantonese conversation. Return ONLY JSON: {"name":"their name"} — or {} if not mentioned. No other text.',
         },
-        { role: 'user', content: `以下係電話對話記錄：\n\n${transcript}` },
+        { role: 'user', content: transcript },
       ],
-      max_tokens: 250,
+      max_tokens: 50,
     }, {
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -145,10 +142,9 @@ Existing memory (do not repeat unchanged fields): ${JSON.stringify(existingMemor
     });
 
     const content = response.data.choices[0]?.message?.content?.trim() ?? '';
-    // Extract the first {...} block — handles prose prefix/suffix from the model
     const match = content.match(/\{[\s\S]*\}/);
     if (!match) {
-      console.warn('[extractMemoryFacts] no JSON object in response:', content.slice(0, 200));
+      console.warn('[extractMemoryFacts] no JSON object in response:', content.slice(0, 100));
       return null;
     }
     return JSON.parse(match[0]);
