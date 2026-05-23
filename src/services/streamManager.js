@@ -2,8 +2,8 @@ import twilio from 'twilio';
 import { decode as mulawDecode } from '../utils/mulaw.js';
 import { createSttStream } from './streamingStt.js';
 import { synthesizeToStream } from './streamingTts.js';
-import { streamQueryLLM, streamQueryOpenRouter, classifyIntent } from './openClawLlm.js';
-import { getContext, saveContext, getUserMemory } from './redisClient.js';
+import { streamQueryLLM, streamQueryOpenRouter, classifyIntent, extractMemoryFacts } from './openClawLlm.js';
+import { getContext, saveContext, getUserMemory, updateUserMemory } from './redisClient.js';
 import { retrieveKnowledge } from './qdrantClient.js';
 
 const SYSTEM_PROMPT = process.env.SYSTEM_PROMPT ||
@@ -65,6 +65,21 @@ export function createCallHandler(ws, log) {
     cancelTts?.();
     cancelTts = null;
     activeStreams.delete(callSid);
+  }
+
+  async function summarizeAndSaveMemory() {
+    if (phone === 'unknown') return;
+    try {
+      const history = await getContext(callSid);
+      if (history.length < 4) return; // less than 2 full turns — not worth saving
+      const existingMemory = await getUserMemory(phone);
+      const facts = await extractMemoryFacts(history, existingMemory);
+      if (!facts || Object.keys(facts).length === 0) return;
+      await updateUserMemory(phone, facts);
+      log(callSid, '💾 MEMORY SAVED', Object.keys(facts).join(', '));
+    } catch (err) {
+      log(callSid, '⚠  MEMORY SAVE ERR', err.message);
+    }
   }
 
   async function hangupCall() {
@@ -380,6 +395,7 @@ export function createCallHandler(ws, log) {
 
       if (msg.event === 'stop') {
         log(callSid, '📵 STREAM STOP');
+        summarizeAndSaveMemory(); // fire-and-forget
         close();
       }
     },

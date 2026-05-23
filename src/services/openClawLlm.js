@@ -113,6 +113,50 @@ export async function classifyIntent(userText) {
   }
 }
 
+// Extract customer facts from a call transcript for persistent user memory.
+// Returns a JSON object of facts, or null if extraction fails / not enough history.
+export async function extractMemoryFacts(history, existingMemory = {}) {
+  const apiKey = process.env.LLM_API_KEY;
+  if (!apiKey || history.length < 4) return null; // need at least 2 full turns
+
+  const today = new Date().toISOString().slice(0, 10);
+  try {
+    const response = await axios.post(LLM_BASE_URL, {
+      model: process.env.LLM_MODEL || FREE_MODELS[0],
+      messages: [
+        {
+          role: 'system',
+          content: `Extract facts about the customer from this Cantonese call transcript. Return ONLY a valid JSON object — no markdown, no extra text. Only include fields where information was clearly mentioned in this call:
+{
+  "name": "customer preferred name or nickname",
+  "location": "where they live",
+  "health_notes": "health, mobility, or medical info",
+  "interests": "hobbies or topics they enjoy",
+  "family": "family members mentioned",
+  "last_call_summary": "1 sentence in Traditional Chinese summarising this call",
+  "last_call_date": "${today}"
+}
+Existing memory (for context, do not repeat unchanged): ${JSON.stringify(existingMemory)}`,
+        },
+        ...history,
+      ],
+      max_tokens: 300,
+    }, {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      timeout: 10000,
+    });
+
+    const content = response.data.choices[0]?.message?.content?.trim() ?? '';
+    const json = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
 // Streaming via OpenRouter — for non-tool conversational queries where speed matters
 export async function* streamQueryOpenRouter(messages) {
   const apiKey = process.env.LLM_API_KEY;
