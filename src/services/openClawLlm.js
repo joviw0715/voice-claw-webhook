@@ -167,6 +167,46 @@ export async function* streamQueryOpenRouter(messages) {
     }
   }
 }
+// Streaming via Google Gemini — low latency (~500ms-1.5s TTFT), works globally.
+// Uses Gemini's OpenAI-compatible endpoint. Set GEMINI_API_KEY env var.
+export async function* streamQueryGemini(messages) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('GEMINI_API_KEY not set');
+
+  const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+  const response = await axios.post(
+    `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`,
+    { messages, model, stream: true },
+    {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
+      },
+      responseType: 'stream',
+      timeout: 15000,
+    },
+  );
+
+  let buf = '';
+  for await (const chunk of response.data) {
+    buf += chunk.toString('utf8');
+    const lines = buf.split('\n');
+    buf = lines.pop() ?? '';
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('data:')) continue;
+      const data = trimmed.slice(5).trim();
+      if (data === '[DONE]') return;
+      try {
+        const json = JSON.parse(data);
+        const tok = json.choices?.[0]?.delta?.content;
+        if (tok) yield tok;
+      } catch { /* non-JSON SSE line */ }
+    }
+  }
+}
+
 // Streaming via Groq — extremely low latency (~200-500ms TTFT) for chat turns.
 // Uses the same OpenAI-compatible API format as OpenRouter.
 export async function* streamQueryGroq(messages) {

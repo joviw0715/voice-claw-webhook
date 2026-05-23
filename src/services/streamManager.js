@@ -2,7 +2,7 @@ import twilio from 'twilio';
 import { decode as mulawDecode } from '../utils/mulaw.js';
 import { createSttStream } from './streamingStt.js';
 import { synthesizeToStream } from './streamingTts.js';
-import { streamQueryLLM, streamQueryOpenRouter, streamQueryGroq, classifyIntent } from './openClawLlm.js';
+import { streamQueryLLM, streamQueryOpenRouter, streamQueryGroq, streamQueryGemini, classifyIntent } from './openClawLlm.js';
 import { getContext, saveContext, getUserMemory, updateUserMemory } from './redisClient.js';
 import { retrieveKnowledge } from './qdrantClient.js';
 import { getNextAmbientMulawChunk } from '../utils/ambientMixer.js';
@@ -120,6 +120,19 @@ export function createCallHandler(ws, log) {
       log(callSid, '📵 HANGUP', 'call ended via REST API');
     } catch (err) {
       log(callSid, '⚠  HANGUP ERR', err.message);
+    }
+  }
+
+  async function* geminiWithFallback(messages, phone) {
+    try {
+      for await (const tok of streamQueryGemini(messages)) {
+        yield tok;
+      }
+    } catch (err) {
+      log(callSid, '⚠  Gemini failed, falling back to OpenRouter/OpenClaw', err.message);
+      for await (const tok of openRouterWithFallback(messages, phone)) {
+        yield tok;
+      }
     }
   }
 
@@ -320,16 +333,19 @@ export function createCallHandler(ws, log) {
       let firstToken = true;
       let firstTts = true;
 
-      const useGroq = !!process.env.GROQ_API_KEY && intent === 'chat';
-      const useOpenRouter = !!process.env.LLM_API_KEY && !useGroq && intent === 'chat';
-      log(callSid, '🤖 LLM START', `${useGroq ? 'Groq' : useOpenRouter ? 'OpenRouter' : 'OpenClaw'} (${Date.now() - t0}ms since user spoke)`);
+      const useGemini = !!process.env.GEMINI_API_KEY && intent === 'chat';
+      const useGroq = !!process.env.GROQ_API_KEY && !useGemini && intent === 'chat';
+      const useOpenRouter = !!process.env.LLM_API_KEY && !useGemini && !useGroq && intent === 'chat';
+      log(callSid, '🤖 LLM START', `${useGemini ? 'Gemini' : useGroq ? 'Groq' : useOpenRouter ? 'OpenRouter' : 'OpenClaw'} (${Date.now() - t0}ms since user spoke)`);
 
       const messages = [{ role: 'system', content: systemPrompt }, ...updatedHistory];
-      const llmStream = useGroq
-        ? groqWithFallback(messages, phone)
-        : useOpenRouter
-          ? openRouterWithFallback(messages, phone)
-          : streamQueryLLM(messages, phone);
+      const llmStream = useGemini
+        ? geminiWithFallback(messages, phone)
+        : useGroq
+          ? groqWithFallback(messages, phone)
+          : useOpenRouter
+            ? openRouterWithFallback(messages, phone)
+            : streamQueryLLM(messages, phone);
 
       for await (const tok of llmStream) {
         if (llmAborted) break;
