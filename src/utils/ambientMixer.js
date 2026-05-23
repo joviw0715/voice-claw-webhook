@@ -5,20 +5,22 @@ import path from 'path';
 // Strips a 44-byte WAV header if present.
 function loadPcm(filePath) {
   const buf = fs.readFileSync(filePath);
-  // WAV files start with "RIFF"
-  if (buf.length > 44 && buf.slice(0, 4).toString('ascii') === 'RIFF') {
-    return buf.slice(44);
+  // WAV files start with "RIFF" — strip the 44-byte header
+  if (buf.length > 44 && buf.subarray(0, 4).toString('ascii') === 'RIFF') {
+    return buf.subarray(44);
   }
   return buf;
 }
 
 let ambientBuf = null;
 let ambientPos = 0;
+let ambientInitDone = false; // attempt load only once
 
 function initAmbient() {
+  if (ambientInitDone) return;
+  ambientInitDone = true;
   const filePath = process.env.AMBIENT_AUDIO_FILE;
   if (!filePath) return;
-  if (ambientBuf) return; // already loaded
   try {
     ambientBuf = loadPcm(path.resolve(filePath));
     console.log(`[ambient] loaded ${filePath} (${ambientBuf.length} bytes, ~${(ambientBuf.length / 32000).toFixed(1)}s)`);
