@@ -81,36 +81,11 @@ export async function queryLLM(messages, phone) {
   throw lastErr;
 }
 
-// Fast intent classifier — 'tools' if query needs web search/reminders/memory, else 'chat'.
-// Runs in parallel with Redis context loading so the overhead is hidden.
-export async function classifyIntent(userText) {
-  const apiKey = process.env.LLM_API_KEY;
-  if (!apiKey) return 'tools'; // no OpenRouter key — always use OpenClaw
-
-  try {
-    const response = await axios.post(LLM_BASE_URL, {
-      model: process.env.LLM_MODEL || FREE_MODELS[0],
-      messages: [
-        {
-          role: 'system',
-          content: 'Reply with only one word: "tools" or "chat". Reply "tools" if the message requires real-time web search (weather, news, prices, current time/date), scheduling a reminder, or memory recall. Reply "chat" for all other conversation.',
-        },
-        { role: 'user', content: userText },
-      ],
-      max_tokens: 5,
-    }, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      timeout: 5000,
-    });
-
-    const word = response.data.choices[0]?.message?.content?.trim().toLowerCase() ?? '';
-    return word.startsWith('tool') ? 'tools' : 'chat';
-  } catch {
-    return 'tools'; // on classifier error, default to OpenClaw for safety
-  }
+// Fast intent classifier — regex-based, no LLM call needed.
+// 'tools' if the query needs real-time data or tool use, else 'chat'.
+export function classifyIntent(userText) {
+  const TOOLS_RE = /天氣|幾度|溫度|氣溫|落雨|晴天|今日.*係咩日|幾點|而家時間|現在時間|今日日期|星期幾|公眾假|新聞|最新消息|提醒|鬧鐘|設定.*時間|股票|匯率|幾錢|航班|火車時間表/;
+  return TOOLS_RE.test(userText) ? 'tools' : 'chat';
 }
 
 // Extract customer facts from a call transcript for persistent user memory.
@@ -192,8 +167,45 @@ export async function* streamQueryOpenRouter(messages) {
     }
   }
 }
-// Automatically falls back to yielding the full response as one chunk if the server
-// doesn't return text/event-stream.
+// Streaming via Groq — extremely low latency (~200-500ms TTFT) for chat turns.
+// Uses the same OpenAI-compatible API format as OpenRouter.
+export async function* streamQueryGroq(messages) {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) throw new Error('GROQ_API_KEY not set');
+
+  const model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+  const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
+    messages,
+    model,
+    stream: true,
+  }, {
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'Accept': 'text/event-stream',
+    },
+    responseType: 'stream',
+    timeout: 15000,
+  });
+
+  let buf = '';
+  for await (const chunk of response.data) {
+    buf += chunk.toString('utf8');
+    const lines = buf.split('\n');
+    buf = lines.pop() ?? '';
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('data:')) continue;
+      const data = trimmed.slice(5).trim();
+      if (data === '[DONE]') return;
+      try {
+        const json = JSON.parse(data);
+        const tok = json.choices?.[0]?.delta?.content;
+        if (tok) yield tok;
+      } catch { /* non-JSON SSE line */ }
+    }
+  }
+}
 export async function* streamQueryLLM(messages, phone) {
   const baseUrl = (process.env.OPENCLAW_URL || 'https://voiceclaw.zeabur.app').replace(/\/$/, '');
   const token = process.env.OPENCLAW_TOKEN;
