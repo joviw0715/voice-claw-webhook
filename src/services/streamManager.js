@@ -57,7 +57,8 @@ export function createCallHandler(ws, log) {
   let state = 'IDLE';
   let cancelTts = null;
   let llmAborted = false;
-  let ttsEndedAt = 0; // timestamp when last AI speech finished (for echo suppression)
+  let ttsEndedAt = 0;    // when last AI speech finished (echo suppression for onFinal)
+  let ttsLastChunkAt = 0; // when last TTS audio chunk was sent (echo suppression for onInterim)
 
   function close() {
     stt?.close();
@@ -109,6 +110,7 @@ export function createCallHandler(ws, log) {
 
   function sendMedia(audioBuffer) {
     if (ws.readyState !== ws.OPEN) return;
+    ttsLastChunkAt = Date.now();
     ws.send(JSON.stringify({
       event: 'media',
       streamSid,
@@ -145,13 +147,14 @@ export function createCallHandler(ws, log) {
     thisStt = createSttStream({
       onInterim(text) {
         if (stt !== thisStt) return; // superseded by a newer STT session
+        if (Date.now() - ttsLastChunkAt < 1500) return; // TTS still playing — suppress echo
         if ((state === 'SPEAKING' || state === 'THINKING') && text.length >= 2) {
           interrupt(`user interim: "${text.slice(0, 30)}"`);
         }
       },
       onFinal(text) {
         if (stt !== thisStt) return; // superseded
-        if (Date.now() - ttsEndedAt < 1000) {
+        if (Date.now() - ttsLastChunkAt < 1500 || Date.now() - ttsEndedAt < 1500) {
           log(callSid, '🔇 ECHO SUPPRESSED', `"${text.slice(0, 30)}"`);
           return;
         }
@@ -319,6 +322,9 @@ export function createCallHandler(ws, log) {
         ]);
         ttsEndedAt = Date.now();
         state = 'LISTENING';
+        // Save memory after each turn while name is still unknown — the name
+        // exchange is the first thing captured and can be sliced out of history later
+        if (!memory.name) summarizeAndSaveMemory();
         if (userSaidFarewell) {
           log(callSid, '👋 FAREWELL', 'user said goodbye — hanging up');
           await hangupCall();
