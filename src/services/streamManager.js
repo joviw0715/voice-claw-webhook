@@ -352,10 +352,11 @@ export function createCallHandler(ws, log) {
       let firstToken = true;
       let firstTts = true;
 
-      const useGemini = !!process.env.GEMINI_API_KEY && intent === 'chat';
-      const useGroq = !!process.env.GROQ_API_KEY && !useGemini && intent === 'chat';
-      const useOpenRouter = !!process.env.LLM_API_KEY && !useGemini && !useGroq && intent === 'chat';
-      log(callSid, '🤖 LLM START', `${useGemini ? 'Gemini' : useGroq ? 'Groq' : useOpenRouter ? 'OpenRouter' : 'OpenClaw'} (${Date.now() - t0}ms since user spoke)`);
+      const geminiDirect = process.env.USE_GEMINI_DIRECT === 'true';
+      const useGemini = !!process.env.GEMINI_API_KEY && (geminiDirect || intent === 'chat');
+      const useGroq = !!process.env.GROQ_API_KEY && !useGemini && (geminiDirect || intent === 'chat');
+      const useOpenRouter = !!process.env.LLM_API_KEY && !useGemini && !useGroq && (geminiDirect || intent === 'chat');
+      log(callSid, '🤖 LLM START', `${useGemini ? `Gemini${geminiDirect ? ' (direct)' : ''}` : useGroq ? 'Groq' : useOpenRouter ? 'OpenRouter' : 'OpenClaw'} (${Date.now() - t0}ms since user spoke)`);
 
       const messages = [{ role: 'system', content: systemPrompt }, ...updatedHistory];
       const llmStream = useGemini
