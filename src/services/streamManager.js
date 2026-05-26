@@ -1,4 +1,5 @@
 import twilio from 'twilio';
+import axios from 'axios';
 import { decode as mulawDecode } from '../utils/mulaw.js';
 import { createSttStream } from './streamingStt.js';
 import { synthesizeToStream } from './streamingTts.js';
@@ -88,6 +89,9 @@ export function createCallHandler(ws, log) {
   let streamSid = null;
   let callSid = 'unknown';
   let phone = 'unknown';
+  let contactId = null;
+  let campaignId = null;
+  let callStartedAt = null;
   let stt = null;
 
   let state = 'IDLE';
@@ -139,6 +143,28 @@ export function createCallHandler(ws, log) {
       log(callSid, '📵 HANGUP', 'call ended via REST API');
     } catch (err) {
       log(callSid, '⚠  HANGUP ERR', err.message);
+    }
+  }
+
+  async function postCallReport() {
+    const consoleUrl = (process.env.CONSOLE_CALLBACK_URL || '').replace(/\/$/, '');
+    if (!consoleUrl || !contactId || !campaignId) return;
+    try {
+      const history = await getContext(callSid);
+      const transcript = history
+        .map(m => `${m.role === 'user' ? 'User' : 'Agent'}: ${m.content}`)
+        .join('\n');
+      const duration_sec = callStartedAt ? Math.round((Date.now() - callStartedAt) / 1000) : null;
+      await axios.post(`${consoleUrl}/api/webhooks/call-complete`, {
+        call_sid: callSid,
+        contact_id: parseInt(contactId),
+        campaign_id: parseInt(campaignId),
+        transcript,
+        duration_sec,
+      }, { timeout: 10000 });
+      log(callSid, '📋 REPORT SENT', `contact=${contactId} campaign=${campaignId}`);
+    } catch (err) {
+      log(callSid, '⚠  REPORT ERR', err.message);
     }
   }
 
@@ -500,6 +526,9 @@ export function createCallHandler(ws, log) {
         streamSid = msg.start.streamSid;
         callSid = msg.start.callSid;
         phone = msg.start.customParameters?.phone || 'unknown';
+        contactId = msg.start.customParameters?.contactId || null;
+        campaignId = msg.start.customParameters?.campaignId || null;
+        callStartedAt = Date.now();
 
         // If a prior handler exists for this call (Twilio reconnect), displace it
         const prevClose = activeStreams.get(callSid);
@@ -548,6 +577,7 @@ export function createCallHandler(ws, log) {
       if (msg.event === 'stop') {
         log(callSid, '📵 STREAM STOP');
         summarizeAndSaveMemory(); // fire-and-forget
+        postCallReport();         // fire-and-forget
         close();
       }
     },
