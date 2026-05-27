@@ -17,6 +17,9 @@ const SENTENCE_RE = /[。？！\n]/;
 // Cantonese + English farewell phrases
 const FAREWELL_RE = /拜拜|再見|掛線|掛電話|掰掰|goodbye|bye/i;
 
+// Inbound escalation — caller requesting a human agent
+const ESCALATION_RE = /唔好意思.*人工|人工.*服務|轉真人|真人.*服務|manager|supervisor|complaint|投訴/i;
+
 // Callback scheduling — user asking to be called back after a delay
 const CALLBACK_RE = /打返|打電話返|call.*back|callback/i;
 
@@ -91,6 +94,8 @@ export function createCallHandler(ws, log) {
   let phone = 'unknown';
   let contactId = null;
   let campaignId = null;
+  let hotlineId = null;
+  let direction = 'outbound'; // 'outbound' | 'inbound'
   let callStartedAt = null;
   let stt = null;
 
@@ -165,6 +170,27 @@ export function createCallHandler(ws, log) {
       log(callSid, '📋 REPORT SENT', `contact=${contactId} campaign=${campaignId}`);
     } catch (err) {
       log(callSid, '⚠  REPORT ERR', err.message);
+    }
+  }
+
+  async function postInboundCallReport() {
+    const consoleUrl = (process.env.CONSOLE_CALLBACK_URL || '').replace(/\/$/, '');
+    if (!consoleUrl || !hotlineId) return;
+    try {
+      const history = await getContext(callSid);
+      const transcript = history
+        .map(m => `${m.role === 'user' ? 'User' : 'Agent'}: ${m.content}`)
+        .join('\n');
+      const duration_sec = callStartedAt ? Math.round((Date.now() - callStartedAt) / 1000) : null;
+      await axios.post(`${consoleUrl}/api/webhooks/inbound/call-end`, {
+        call_sid: callSid,
+        transcript,
+        duration_sec,
+        escalated: false,
+      }, { timeout: 10000 });
+      log(callSid, '📋 INBOUND REPORT SENT', `hotline=${hotlineId}`);
+    } catch (err) {
+      log(callSid, '⚠  INBOUND REPORT ERR', err.message);
     }
   }
 
@@ -332,6 +358,16 @@ export function createCallHandler(ws, log) {
   async function handleUserSpeech(userText) {
     state = 'THINKING';
     llmAborted = false;
+
+    // Escalation detection for inbound calls
+    if (direction === 'inbound' && ESCALATION_RE.test(userText)) {
+      const consoleUrl = (process.env.CONSOLE_CALLBACK_URL || '').replace(/\/$/, '');
+      if (consoleUrl) {
+        log(callSid, '🚨 ESCALATION DETECTED', `"${userText.slice(0, 60)}"`);
+        axios.post(`${consoleUrl}/api/webhooks/escalate`, { call_sid: callSid }, { timeout: 5000 })
+          .catch((err) => log(callSid, '⚠  ESCALATE ERR', err.message));
+      }
+    }
     const t0 = Date.now();
     const userSaidFarewell = FAREWELL_RE.test(userText);
 
@@ -528,6 +564,8 @@ export function createCallHandler(ws, log) {
         phone = msg.start.customParameters?.phone || 'unknown';
         contactId = msg.start.customParameters?.contactId || null;
         campaignId = msg.start.customParameters?.campaignId || null;
+        hotlineId = msg.start.customParameters?.hotlineId || null;
+        direction = msg.start.customParameters?.direction || 'outbound';
         callStartedAt = Date.now();
 
         // If a prior handler exists for this call (Twilio reconnect), displace it
@@ -538,7 +576,22 @@ export function createCallHandler(ws, log) {
         }
         activeStreams.set(callSid, close);
 
-        log(callSid, '🎙️  STREAM START', `from=${phone}`);
+        log(callSid, '🎙️  STREAM START', `from=${phone} direction=${direction}`);
+
+        // Notify business-console for inbound calls
+        if (direction === 'inbound' && hotlineId) {
+          const consoleUrl = (process.env.CONSOLE_CALLBACK_URL || '').replace(/\/$/, '');
+          if (consoleUrl) {
+            axios.post(`${consoleUrl}/api/webhooks/inbound/call-start`, {
+              call_sid: callSid,
+              hotline_id: parseInt(hotlineId),
+              caller_phone: phone !== 'unknown' ? phone : null,
+            }, { timeout: 5000 }).catch((err) =>
+              log(callSid, '⚠  INBOUND START ERR', err.message),
+            );
+          }
+        }
+
         startAmbientLoop();
 
         // Load user memory to personalise greeting, then play it.
@@ -577,7 +630,11 @@ export function createCallHandler(ws, log) {
       if (msg.event === 'stop') {
         log(callSid, '📵 STREAM STOP');
         summarizeAndSaveMemory(); // fire-and-forget
-        postCallReport();         // fire-and-forget
+        if (direction === 'inbound') {
+          postInboundCallReport(); // fire-and-forget
+        } else {
+          postCallReport();        // fire-and-forget
+        }
         close();
       }
     },
