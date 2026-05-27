@@ -8,7 +8,7 @@ import { mixAmbient } from '../utils/ambientMixer.js';
 //   onDone()        — synthesis complete
 //   onError(err)    — synthesis failed
 // Returns { cancel() } to abort mid-stream.
-export function synthesizeToStream(text, { onChunk, onDone, onError }) {
+export function synthesizeToStream(text, { onChunk, onDone, onError, voiceId }) {
   let cancelled = false;
   const ctrl = new AbortController();
 
@@ -21,7 +21,7 @@ export function synthesizeToStream(text, { onChunk, onDone, onError }) {
         stream: true,
         language_boost: process.env.MINIMAX_LANGUAGE_BOOST || 'Chinese,Yue',
         voice_setting: {
-          voice_id: process.env.MINIMAX_VOICE_ID || 'Cantonese_GentleLady',
+          voice_id: voiceId || process.env.MINIMAX_VOICE_ID || 'Cantonese_GentleLady',
           speed: 1.0,
           vol: 1.0,
           pitch: 0,

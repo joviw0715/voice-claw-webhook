@@ -96,6 +96,8 @@ export function createCallHandler(ws, log) {
   let campaignId = null;
   let hotlineId = null;
   let direction = 'outbound'; // 'outbound' | 'inbound'
+  let voiceId = process.env.MINIMAX_VOICE_ID || 'Cantonese_GentleLady';
+  let paramGreetingText = '';
   let callStartedAt = null;
   let stt = null;
 
@@ -536,6 +538,7 @@ export function createCallHandler(ws, log) {
   function speakSentence(text) {
     return new Promise((resolve) => {
       const handle = synthesizeToStream(text, {
+        voiceId,
         onChunk(buf) { if (!llmAborted) sendMedia(buf); },
         onDone() { clearTimeout(hangGuard); cancelTts = null; resolve(); },
         onError(err) { clearTimeout(hangGuard); log(callSid, '⚠  TTS ERR', err.message); cancelTts = null; resolve(); },
@@ -566,6 +569,8 @@ export function createCallHandler(ws, log) {
         campaignId = msg.start.customParameters?.campaignId || null;
         hotlineId = msg.start.customParameters?.hotlineId || null;
         direction = msg.start.customParameters?.direction || 'outbound';
+        voiceId = msg.start.customParameters?.voiceId || process.env.MINIMAX_VOICE_ID || 'Cantonese_GentleLady';
+        paramGreetingText = msg.start.customParameters?.greetingText || '';
         callStartedAt = Date.now();
 
         // If a prior handler exists for this call (Twilio reconnect), displace it
@@ -600,19 +605,21 @@ export function createCallHandler(ws, log) {
           const name = memory?.name;
           const greetingText = name
             ? `你好呀${name}，我係祖兒呀，你今日點呀？`
-            : (process.env.FIRST_MESSAGE || '你好，我係祖兒呀，請問點稱呼你呀？');
+            : (paramGreetingText || process.env.FIRST_MESSAGE || '你好，我係祖兒呀，請問點稱呼你呀？');
           state = 'SPEAKING';
           log(callSid, '🔊 GREETING', `"${greetingText}"`);
           synthesizeToStream(greetingText, {
+            voiceId,
             onChunk(buf) { sendMedia(buf); },
             onDone() { startListening(); },
             onError(err) { log(callSid, '⚠ GREETING ERR', err.message); startListening(); },
           });
         }).catch(err => {
           log(callSid, '⚠ GREETING MEM ERR', err.message);
-          const greetingText = process.env.FIRST_MESSAGE || '你好，我係祖兒呀，請問點稱呼你呀？';
+          const greetingText = paramGreetingText || process.env.FIRST_MESSAGE || '你好，我係祖兒呀，請問點稱呼你呀？';
           state = 'SPEAKING';
           synthesizeToStream(greetingText, {
+            voiceId,
             onChunk(buf) { sendMedia(buf); },
             onDone() { startListening(); },
             onError(err2) { log(callSid, '⚠ GREETING ERR', err2.message); startListening(); },
