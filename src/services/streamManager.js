@@ -95,10 +95,11 @@ export function createCallHandler(ws, log) {
   let contactId = null;
   let campaignId = null;
   let hotlineId = null;
-  let direction = 'outbound'; // 'outbound' | 'inbound'
+  let direction = 'outbound';
+  let afterHours = false;
   let voiceId = process.env.MINIMAX_VOICE_ID || 'Cantonese_GentleLady';
   let paramGreetingText = '';
-  let paramSystemPrompt = ''; // per-campaign system prompt from TwiML parameter
+  let paramSystemPrompt = '';
   let callStartedAt = null;
   let stt = null;
 
@@ -190,6 +191,7 @@ export function createCallHandler(ws, log) {
         transcript,
         duration_sec,
         escalated: false,
+        after_hours: afterHours,
       }, { timeout: 10000 });
       log(callSid, '📋 INBOUND REPORT SENT', `hotline=${hotlineId}`);
     } catch (err) {
@@ -570,6 +572,7 @@ export function createCallHandler(ws, log) {
         campaignId = msg.start.customParameters?.campaignId || null;
         hotlineId = msg.start.customParameters?.hotlineId || null;
         direction = msg.start.customParameters?.direction || 'outbound';
+        afterHours = msg.start.customParameters?.afterHours === 'true';
         voiceId = msg.start.customParameters?.voiceId || process.env.MINIMAX_VOICE_ID || 'Cantonese_GentleLady';
         paramGreetingText = msg.start.customParameters?.greetingText || '';
         paramSystemPrompt = msg.start.customParameters?.systemPrompt || '';
