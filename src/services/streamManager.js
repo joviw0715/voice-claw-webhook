@@ -604,23 +604,17 @@ export function createCallHandler(ws, log) {
 
         startAmbientLoop();
 
-        // Load user memory to personalise greeting, then play it.
-        // Outbound campaigns: use paramGreetingText if set; otherwise derive from
-        // first sentence of paramSystemPrompt so the AI speaks the campaign script opener.
-        // Inbound/personal calls: known user → greet by name.
-        getUserMemory(phone).then(memory => {
+        // For outbound calls the greeting is always known upfront — speak immediately
+        // without waiting for getUserMemory to avoid silence at call start.
+        if (direction === 'outbound') {
           let greetingText;
           if (paramGreetingText) {
             greetingText = paramGreetingText;
-          } else if (direction === 'outbound' && paramSystemPrompt) {
-            // Use the first sentence of the campaign script as the opening line
+          } else if (paramSystemPrompt) {
             const firstSentence = paramSystemPrompt.split(/[。？！\n]/)[0].trim();
             greetingText = firstSentence.length >= 4 ? firstSentence : paramSystemPrompt.slice(0, 80).trim();
           } else {
-            const name = memory?.name;
-            greetingText = name
-              ? `你好呀${name}，我係祖兒呀，你今日點呀？`
-              : (process.env.FIRST_MESSAGE || '你好，我係祖兒呀，請問點稱呼你呀？');
+            greetingText = process.env.FIRST_MESSAGE || '你好，請問係咪方便聽電話？';
           }
           state = 'SPEAKING';
           log(callSid, '🔊 GREETING', `"${greetingText}"`);
@@ -630,17 +624,33 @@ export function createCallHandler(ws, log) {
             onDone() { startListening(); },
             onError(err) { log(callSid, '⚠ GREETING ERR', err.message); startListening(); },
           });
-        }).catch(err => {
-          log(callSid, '⚠ GREETING MEM ERR', err.message);
-          const greetingText = paramGreetingText || process.env.FIRST_MESSAGE || '你好，我係祖兒呀，請問點稱呼你呀？';
-          state = 'SPEAKING';
-          synthesizeToStream(greetingText, {
-            voiceId,
-            onChunk(buf) { sendMedia(buf); },
-            onDone() { startListening(); },
-            onError(err2) { log(callSid, '⚠ GREETING ERR', err2.message); startListening(); },
+        } else {
+          // Inbound: load user memory to personalise greeting with their name
+          getUserMemory(phone).then(memory => {
+            const name = memory?.name;
+            const greetingText = paramGreetingText || (name
+              ? `你好呀${name}，我係祖兒呀，你今日點呀？`
+              : (process.env.FIRST_MESSAGE || '你好，我係祖兒呀，請問點稱呼你呀？'));
+            state = 'SPEAKING';
+            log(callSid, '🔊 GREETING', `"${greetingText}"`);
+            synthesizeToStream(greetingText, {
+              voiceId,
+              onChunk(buf) { sendMedia(buf); },
+              onDone() { startListening(); },
+              onError(err) { log(callSid, '⚠ GREETING ERR', err.message); startListening(); },
+            });
+          }).catch(err => {
+            log(callSid, '⚠ GREETING MEM ERR', err.message);
+            const greetingText = paramGreetingText || process.env.FIRST_MESSAGE || '你好，我係祖兒呀，請問點稱呼你呀？';
+            state = 'SPEAKING';
+            synthesizeToStream(greetingText, {
+              voiceId,
+              onChunk(buf) { sendMedia(buf); },
+              onDone() { startListening(); },
+              onError(err2) { log(callSid, '⚠ GREETING ERR', err2.message); startListening(); },
+            });
           });
-        });
+        }
         return;
       }
 
