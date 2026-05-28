@@ -567,7 +567,7 @@ export function createCallHandler(ws, log) {
       if (msg.event === 'start') {
         streamSid = msg.start.streamSid;
         callSid = msg.start.callSid;
-        phone = msg.start.customParameters?.phone || 'unknown';
+        phone = msg.start.customParameters?.callerPhone || msg.start.customParameters?.phone || 'unknown';
         contactId = msg.start.customParameters?.contactId || null;
         campaignId = msg.start.customParameters?.campaignId || null;
         hotlineId = msg.start.customParameters?.hotlineId || null;
