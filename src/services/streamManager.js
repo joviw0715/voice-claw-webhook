@@ -98,6 +98,7 @@ export function createCallHandler(ws, log) {
   let direction = 'outbound'; // 'outbound' | 'inbound'
   let voiceId = process.env.MINIMAX_VOICE_ID || 'Cantonese_GentleLady';
   let paramGreetingText = '';
+  let paramSystemPrompt = ''; // per-campaign system prompt from TwiML parameter
   let callStartedAt = null;
   let stt = null;
 
@@ -409,7 +410,7 @@ export function createCallHandler(ws, log) {
       if (llmAborted) return;
 
       const updatedHistory = [...history, { role: 'user', content: userText }].slice(-6);
-      const systemPrompt = `${SYSTEM_PROMPT}\nUser memory: ${JSON.stringify(memory)}\nKnowledge: ${knowledge.join('\n')}`;
+      const systemPrompt = `${paramSystemPrompt || SYSTEM_PROMPT}\nUser memory: ${JSON.stringify(memory)}\nKnowledge: ${knowledge.join('\n')}`;
 
       let fullReply = '';
       let sentenceBuf = '';
@@ -571,6 +572,7 @@ export function createCallHandler(ws, log) {
         direction = msg.start.customParameters?.direction || 'outbound';
         voiceId = msg.start.customParameters?.voiceId || process.env.MINIMAX_VOICE_ID || 'Cantonese_GentleLady';
         paramGreetingText = msg.start.customParameters?.greetingText || '';
+        paramSystemPrompt = msg.start.customParameters?.systemPrompt || '';
         callStartedAt = Date.now();
 
         // If a prior handler exists for this call (Twilio reconnect), displace it
@@ -600,12 +602,23 @@ export function createCallHandler(ws, log) {
         startAmbientLoop();
 
         // Load user memory to personalise greeting, then play it.
-        // Known user → greet by name. Unknown user → ask for their name.
+        // Outbound campaigns: use paramGreetingText if set; otherwise derive from
+        // first sentence of paramSystemPrompt so the AI speaks the campaign script opener.
+        // Inbound/personal calls: known user → greet by name.
         getUserMemory(phone).then(memory => {
-          const name = memory?.name;
-          const greetingText = name
-            ? `你好呀${name}，我係祖兒呀，你今日點呀？`
-            : (paramGreetingText || process.env.FIRST_MESSAGE || '你好，我係祖兒呀，請問點稱呼你呀？');
+          let greetingText;
+          if (paramGreetingText) {
+            greetingText = paramGreetingText;
+          } else if (direction === 'outbound' && paramSystemPrompt) {
+            // Use the first sentence of the campaign script as the opening line
+            const firstSentence = paramSystemPrompt.split(/[。？！\n]/)[0].trim();
+            greetingText = firstSentence.length >= 4 ? firstSentence : paramSystemPrompt.slice(0, 80).trim();
+          } else {
+            const name = memory?.name;
+            greetingText = name
+              ? `你好呀${name}，我係祖兒呀，你今日點呀？`
+              : (process.env.FIRST_MESSAGE || '你好，我係祖兒呀，請問點稱呼你呀？');
+          }
           state = 'SPEAKING';
           log(callSid, '🔊 GREETING', `"${greetingText}"`);
           synthesizeToStream(greetingText, {
