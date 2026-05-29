@@ -617,12 +617,27 @@ export function createCallHandler(ws, log) {
             greetingText = process.env.FIRST_MESSAGE || '你好，請問係咪方便聽電話？';
           }
           state = 'SPEAKING';
-          log(callSid, '🔊 GREETING', `"${greetingText}"`);
+          log(callSid, '🔊 GREETING', `"${greetingText}" voice=${voiceId}`);
           synthesizeToStream(greetingText, {
             voiceId,
             onChunk(buf) { sendMedia(buf); },
             onDone() { startListening(); },
-            onError(err) { log(callSid, '⚠ GREETING ERR', err.message); startListening(); },
+            onError(err) {
+              log(callSid, '⚠ GREETING ERR', `voice=${voiceId} err=${err.message}`);
+              // Retry with default voice if the selected voice was rejected
+              const fallbackVoice = process.env.MINIMAX_VOICE_ID || 'Cantonese_GentleLady';
+              if (voiceId !== fallbackVoice) {
+                log(callSid, '🔊 GREETING RETRY', `falling back to voice=${fallbackVoice}`);
+                synthesizeToStream(greetingText, {
+                  voiceId: fallbackVoice,
+                  onChunk(buf) { sendMedia(buf); },
+                  onDone() { startListening(); },
+                  onError(err2) { log(callSid, '⚠ GREETING FALLBACK ERR', err2.message); startListening(); },
+                });
+              } else {
+                startListening();
+              }
+            },
           });
         } else {
           // Inbound: load user memory to personalise greeting with their name
