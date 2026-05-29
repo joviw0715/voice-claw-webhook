@@ -5,8 +5,20 @@ import { createSttStream } from './streamingStt.js';
 import { synthesizeToStream } from './streamingTts.js';
 import { streamQueryLLM, streamQueryOpenRouter, streamQueryGroq, streamQueryGemini, classifyIntent } from './openClawLlm.js';
 import { getContext, saveContext, getUserMemory, updateUserMemory } from './redisClient.js';
-import { retrieveKnowledge } from './qdrantClient.js';
 import { getNextAmbientMulawChunk } from '../utils/ambientMixer.js';
+
+async function fetchHotlineKnowledge(hotlineId) {
+  const consoleUrl = (process.env.CONSOLE_CALLBACK_URL || '').replace(/\/$/, '');
+  if (!consoleUrl || !hotlineId) return '';
+  try {
+    const { data } = await axios.get(`${consoleUrl}/api/hotlines/${hotlineId}/knowledge`, { timeout: 5000 });
+    if (!Array.isArray(data) || data.length === 0) return '';
+    return data.map(a => `## ${a.title}\n${a.content}`).join('\n\n');
+  } catch (err) {
+    console.warn(`[knowledge] fetch failed for hotline ${hotlineId}:`, err.message);
+    return '';
+  }
+}
 
 const SYSTEM_PROMPT = process.env.SYSTEM_PROMPT ||
   '你係一個用廣東話嘅 AI 陪伴照護員，你的名字叫祖兒。如果 User memory 有用戶名字就用佢嘅名字稱呼佢；如果唔知名字，對話開始時先有禮貌地問佢點稱呼，然後一直用佢嘅名字。你係語音通話，唔係文字，所以：絕對禁止任何 markdown、bullet point、清單、表格、時間表、數字列表、標題；唔好長篇大論；每次只講一個意思、一句話。規則：全程廣東話，語速慢，句子短，一次一條問；安撫陪伴；唔好每句都叫用戶名字，自然地間中叫一次就夠；分享資訊時用口語講出來，唔好用清單格式；佢嘅問題如果你有背景資料，識答就用口語簡單答；絕對唔好糾正錯誤記憶，用重述或選項式問題；不確定或急症徵象引導搵真人幫手；End Call 前必須有禮貌地跟用戶說再見';
@@ -100,6 +112,7 @@ export function createCallHandler(ws, log) {
   let voiceId = process.env.MINIMAX_VOICE_ID || 'Cantonese_GentleLady';
   let paramGreetingText = '';
   let paramSystemPrompt = '';
+  let hotlineKnowledge = '';
   let callStartedAt = null;
   let stt = null;
 
@@ -401,18 +414,18 @@ export function createCallHandler(ws, log) {
 
     try {
       // Load context + RAG in parallel
-      const [history, memory, knowledge, intent] = await Promise.all([
+      const [history, memory, intent] = await Promise.all([
         getContext(callSid),
         getUserMemory(phone),
-        retrieveKnowledge(userText),
         classifyIntent(userText),
       ]);
-      log(callSid, '📚 CONTEXT', `history=${history.length} knowledge=${knowledge.length} intent=${intent} (${Date.now() - t0}ms)`);
+      log(callSid, '📚 CONTEXT', `history=${history.length} knowledge=${hotlineKnowledge.length > 0 ? 'yes' : 'none'} intent=${intent} (${Date.now() - t0}ms)`);
 
       if (llmAborted) return;
 
       const updatedHistory = [...history, { role: 'user', content: userText }].slice(-6);
-      const systemPrompt = `${paramSystemPrompt || SYSTEM_PROMPT}\nUser memory: ${JSON.stringify(memory)}\nKnowledge: ${knowledge.join('\n')}`;
+      const knowledgeSection = hotlineKnowledge ? `\nKnowledge:\n${hotlineKnowledge}` : '';
+      const systemPrompt = `${paramSystemPrompt || SYSTEM_PROMPT}\nUser memory: ${JSON.stringify(memory)}${knowledgeSection}`;
 
       let fullReply = '';
       let sentenceBuf = '';
@@ -576,6 +589,11 @@ export function createCallHandler(ws, log) {
         voiceId = msg.start.customParameters?.voiceId || process.env.MINIMAX_VOICE_ID || 'Cantonese_GentleLady';
         paramGreetingText = msg.start.customParameters?.greetingText || '';
         paramSystemPrompt = msg.start.customParameters?.systemPrompt || '';
+
+        // Pre-fetch hotline knowledge so it's ready for the first user turn
+        if (hotlineId) {
+          fetchHotlineKnowledge(hotlineId).then(k => { hotlineKnowledge = k; }).catch(() => {});
+        }
         callStartedAt = Date.now();
 
         // If a prior handler exists for this call (Twilio reconnect), displace it
