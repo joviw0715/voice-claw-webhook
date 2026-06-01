@@ -639,7 +639,11 @@ export function createCallHandler(ws, log) {
           synthesizeToStream(greetingText, {
             voiceId,
             onChunk(buf) { sendMedia(buf); },
-            onDone() { startListening(); },
+            onDone() {
+              // Seed greeting as assistant turn so LLM doesn't repeat the opening
+              saveContext(callSid, [{ role: 'assistant', content: greetingText }]).catch(() => {});
+              startListening();
+            },
             onError(err) {
               log(callSid, '⚠ GREETING ERR', `voice=${voiceId} err=${err.message}`);
               // Retry with default voice if the selected voice was rejected
@@ -649,7 +653,10 @@ export function createCallHandler(ws, log) {
                 synthesizeToStream(greetingText, {
                   voiceId: fallbackVoice,
                   onChunk(buf) { sendMedia(buf); },
-                  onDone() { startListening(); },
+                  onDone() {
+                    saveContext(callSid, [{ role: 'assistant', content: greetingText }]).catch(() => {});
+                    startListening();
+                  },
                   onError(err2) { log(callSid, '⚠ GREETING FALLBACK ERR', err2.message); startListening(); },
                 });
               } else {
