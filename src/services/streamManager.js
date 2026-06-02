@@ -5,6 +5,7 @@ import { createSttStream } from './streamingStt.js';
 import { synthesizeToStream } from './streamingTts.js';
 import { streamQueryLLM, streamQueryOpenRouter, streamQueryGroq, streamQueryGemini, classifyIntent } from './openClawLlm.js';
 import { getContext, saveContext, getUserMemory, updateUserMemory } from './redisClient.js';
+import { retrieveKnowledge } from './qdrantClient.js';
 import { getNextAmbientMulawChunk } from '../utils/ambientMixer.js';
 
 async function fetchHotlineKnowledge(hotlineId) {
@@ -113,6 +114,7 @@ export function createCallHandler(ws, log) {
   let paramGreetingText = '';
   let paramSystemPrompt = '';
   let hotlineKnowledge = '';
+  let qdrantCollection = null;
   let callStartedAt = null;
   let stt = null;
 
@@ -414,18 +416,20 @@ export function createCallHandler(ws, log) {
 
     try {
       // Load context + RAG in parallel
-      const [history, memory, intent] = await Promise.all([
+      const [history, memory, intent, ragChunks] = await Promise.all([
         getContext(callSid),
         getUserMemory(phone),
         classifyIntent(userText),
+        retrieveKnowledge(userText, 3, qdrantCollection),
       ]);
-      log(callSid, '📚 CONTEXT', `history=${history.length} knowledge=${hotlineKnowledge.length > 0 ? 'yes' : 'none'} intent=${intent} (${Date.now() - t0}ms)`);
+      log(callSid, '📚 CONTEXT', `history=${history.length} knowledge=${hotlineKnowledge.length > 0 ? 'yes' : 'none'} rag=${ragChunks.length} intent=${intent} (${Date.now() - t0}ms)`);
 
       if (llmAborted) return;
 
       const updatedHistory = [...history, { role: 'user', content: userText }].slice(-6);
       const knowledgeSection = hotlineKnowledge ? `\nKnowledge:\n${hotlineKnowledge}` : '';
-      const systemPrompt = `${paramSystemPrompt || SYSTEM_PROMPT}\nUser memory: ${JSON.stringify(memory)}${knowledgeSection}`;
+      const ragSection = ragChunks.length > 0 ? `\nRelevant knowledge:\n${ragChunks.join('\n---\n')}` : '';
+      const systemPrompt = `${paramSystemPrompt || SYSTEM_PROMPT}\nUser memory: ${JSON.stringify(memory)}${knowledgeSection}${ragSection}`;
 
       let fullReply = '';
       let sentenceBuf = '';
@@ -590,6 +594,7 @@ export function createCallHandler(ws, log) {
         voiceId = msg.start.customParameters?.voiceId || process.env.MINIMAX_VOICE_ID || 'Cantonese_GentleLady';
         paramGreetingText = msg.start.customParameters?.greetingText || '';
         paramSystemPrompt = msg.start.customParameters?.systemPrompt || '';
+        qdrantCollection = msg.start.customParameters?.qdrantCollection || null;
 
         // Pre-fetch hotline knowledge so it's ready for the first user turn
         if (hotlineId) {

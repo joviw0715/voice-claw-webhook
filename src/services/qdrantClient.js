@@ -55,13 +55,10 @@ async function getEmbedding(text) {
   return new Array(EMBEDDING_DIMENSION).fill(0);
 }
 
-/**
- * ✅ Rename to match server.js
- */
-export async function retrieveKnowledge(query, topK = 3) {
+export async function retrieveKnowledge(query, topK = 3, collectionOverride = null) {
   if (!process.env.EMBEDDING_API_URL) return [];
 
-  const collection = process.env.QDRANT_COLLECTION || 'knowledge_base';
+  const collection = collectionOverride || process.env.QDRANT_COLLECTION || 'knowledge_base';
 
   const vector = await getEmbedding(query);
 
