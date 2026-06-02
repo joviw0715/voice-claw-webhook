@@ -449,7 +449,8 @@ export function createCallHandler(ws, log) {
 
       // For OpenClaw (tool queries): play an immediate Cantonese acknowledgment so the
       // user gets feedback during the long processing time instead of silence.
-      if (!useGemini && !useGroq && !useOpenRouter && !llmAborted) {
+      // Only play filler for actual tool queries — not for conversational/booking replies.
+      if (!useGemini && !useGroq && !useOpenRouter && !llmAborted && intent === 'tools') {
         let filler = '好，等我幫你查下';
         if (/天氣|落雨|氣溫|溫度|晴天/.test(userText)) filler = '等我查下天氣先';
         else if (/幾點|時間|日期|星期/.test(userText)) filler = '等我睇下而家幾點';
