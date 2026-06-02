@@ -1,7 +1,7 @@
 import { QdrantClient } from '@qdrant/js-client-rest';
 import axios from 'axios';
 
-const EMBEDDING_DIMENSION = 1536;
+const EMBEDDING_DIMENSION = parseInt(process.env.EMBEDDING_DIM || '768');
 
 let qdrantClient;
 
