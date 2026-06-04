@@ -85,7 +85,7 @@ export async function queryLLM(messages, phone) {
 // Fast intent classifier — regex-based, no LLM call needed.
 // 'tools' if the query needs real-time data or tool use, else 'chat'.
 export function classifyIntent(userText) {
-  const TOOLS_RE = /天氣|幾度|溫度|氣溫|落雨|晴天|今日.*係咩日|幾點|而家時間|現在時間|今日日期|星期幾|公眾假|新聞|最新消息|提醒|鬧鐘|設定.*時間|股票|匯率|幾錢|航班|火車時間表/;
+  const TOOLS_RE = /天氣|幾度|溫度|氣溫|落雨|晴天|今日.*係咩日|而家幾點|而家時間|現在時間|今日日期|星期幾|公眾假|新聞|最新消息|提醒|鬧鐘|設定.*時間|股票|匯率|幾錢|航班|火車時間表/;
   return TOOLS_RE.test(userText) ? 'tools' : 'chat';
 }
 
