@@ -220,7 +220,7 @@ export function createCallHandler(ws, log) {
         yield tok;
       }
     } catch (err) {
-      log(callSid, '⚠  Gemini failed, falling back to OpenRouter/OpenClaw', err.message);
+      log(callSid, '⚠  Gemini FAILED', `${err.message} status=${err.response?.status} data=${JSON.stringify(err.response?.data)?.slice(0,200)}`);
       for await (const tok of openRouterWithFallback(messages, phone)) {
         yield tok;
       }
