@@ -60,7 +60,13 @@ export async function retrieveKnowledge(query, topK = 3, collectionOverride = nu
 
   const collection = collectionOverride || process.env.QDRANT_COLLECTION || 'knowledge_base';
 
-  const vector = await getEmbedding(query);
+  let vector;
+  try {
+    vector = await getEmbedding(query);
+  } catch (err) {
+    console.warn(`[qdrant] embedding failed, skipping RAG: ${err.message}`);
+    return [];
+  }
 
   try {
     const results = await getClient().search(collection, {
@@ -77,6 +83,7 @@ export async function retrieveKnowledge(query, topK = 3, collectionOverride = nu
       console.warn(`Qdrant collection "${collection}" not found — skipping RAG`);
       return [];
     }
-    throw err;
+    console.warn(`[qdrant] search failed, skipping RAG: ${err.message}`);
+    return [];
   }
 }
