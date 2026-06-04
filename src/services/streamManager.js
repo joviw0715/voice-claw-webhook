@@ -10,17 +10,22 @@ import { getNextAmbientMulawChunk } from '../utils/ambientMixer.js';
 
 async function fetchHotlineKnowledge(hotlineId) {
   const consoleUrl = (process.env.CONSOLE_CALLBACK_URL || '').replace(/\/$/, '');
-  if (!consoleUrl || !hotlineId) return '';
+  if (!consoleUrl || !hotlineId) {
+    console.warn(`[knowledge] skipped — CONSOLE_CALLBACK_URL=${consoleUrl} hotlineId=${hotlineId}`);
+    return '';
+  }
   try {
     const token = process.env.CONSOLE_API_TOKEN || process.env.SESSION_SECRET || '';
+    console.log(`[knowledge] fetching hotline=${hotlineId} url=${consoleUrl} token=${token ? 'set' : 'MISSING'}`);
     const { data } = await axios.get(`${consoleUrl}/api/hotlines/${hotlineId}/knowledge`, {
       timeout: 5000,
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     if (!Array.isArray(data) || data.length === 0) return '';
+    console.log(`[knowledge] loaded ${data.length} articles for hotline=${hotlineId}`);
     return data.map(a => `## ${a.title}\n${a.content}`).join('\n\n');
   } catch (err) {
-    console.warn(`[knowledge] fetch failed for hotline ${hotlineId}:`, err.message);
+    console.warn(`[knowledge] fetch failed for hotline ${hotlineId}:`, err.message, err.response?.status);
     return '';
   }
 }
