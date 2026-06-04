@@ -21,7 +21,10 @@ async function fetchHotlineKnowledge(hotlineId) {
       timeout: 5000,
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
-    if (!Array.isArray(data) || data.length === 0) return '';
+    if (!Array.isArray(data) || data.length === 0) {
+      console.warn(`[knowledge] empty response for hotline=${hotlineId} — data:`, JSON.stringify(data)?.slice(0, 200));
+      return '';
+    }
     console.log(`[knowledge] loaded ${data.length} articles for hotline=${hotlineId}`);
     return data.map(a => `## ${a.title}\n${a.content}`).join('\n\n');
   } catch (err) {
