@@ -12,7 +12,11 @@ async function fetchHotlineKnowledge(hotlineId) {
   const consoleUrl = (process.env.CONSOLE_CALLBACK_URL || '').replace(/\/$/, '');
   if (!consoleUrl || !hotlineId) return '';
   try {
-    const { data } = await axios.get(`${consoleUrl}/api/hotlines/${hotlineId}/knowledge`, { timeout: 5000 });
+    const token = process.env.CONSOLE_API_TOKEN || process.env.SESSION_SECRET || '';
+    const { data } = await axios.get(`${consoleUrl}/api/hotlines/${hotlineId}/knowledge`, {
+      timeout: 5000,
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
     if (!Array.isArray(data) || data.length === 0) return '';
     return data.map(a => `## ${a.title}\n${a.content}`).join('\n\n');
   } catch (err) {
