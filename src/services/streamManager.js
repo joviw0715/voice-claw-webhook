@@ -441,7 +441,8 @@ export function createCallHandler(ws, log) {
       const updatedHistory = [...history, { role: 'user', content: userText }].slice(-6);
       const knowledgeSection = hotlineKnowledge ? `\nKnowledge:\n${hotlineKnowledge}` : '';
       const ragSection = ragChunks.length > 0 ? `\nRelevant knowledge:\n${ragChunks.join('\n---\n')}` : '';
-      const systemPrompt = `${paramSystemPrompt || SYSTEM_PROMPT}\nUser memory: ${JSON.stringify(memory)}${knowledgeSection}${ragSection}\n重要：唔好用「您好」、「你好」或任何問候語開始每次回覆——已經係通話中，直接答問題就好。每次只講一至兩句，唔好長篇大論。`;
+      const hkNow = new Intl.DateTimeFormat('zh-HK', { timeZone: 'Asia/Hong_Kong', year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date());
+      const systemPrompt = `${paramSystemPrompt || SYSTEM_PROMPT}\nUser memory: ${JSON.stringify(memory)}${knowledgeSection}${ragSection}\n現在香港時間：${hkNow}\n重要：唔好用「您好」、「你好」或任何問候語開始每次回覆——已經係通話中，直接答問題就好。每次只講一至兩句，唔好長篇大論。`;
 
       let fullReply = '';
       let sentenceBuf = '';
