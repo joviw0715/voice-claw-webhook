@@ -4,7 +4,7 @@ import { WebSocketServer } from "ws";
 import { fileURLToPath } from "url";
 import path from "path";
 import twilio from "twilio";
-import { getContext, saveContext, getUserMemory, setResult, getResult, deleteResult } from "./src/services/redisClient.js";
+import { getContext, saveContext, getUserMemory, setResult, getResult, deleteResult, setProcessStart, getProcessStart, deleteProcessStart } from "./src/services/redisClient.js";
 import { queryLLM } from "./src/services/openClawLlm.js";
 import { synthesizeSpeech } from "./src/services/minimaxTts.js";
 import { retrieveKnowledge } from "./src/services/qdrantClient.js";
@@ -233,6 +233,7 @@ app.post("/process", async (req, res) => {
 
   // Fire LLM + TTS in background — respond immediately so Twilio doesn't time out
   log(callSid, '⚡ ASYNC START', `launching background processing (${Date.now() - start}ms so far)`);
+  setProcessStart(callSid, start).catch(() => {});
   processAsync(callSid, phone, userText);
 
   log(callSid, '📤 POLL REDIRECT', `redirecting Twilio to poll — STT total=${Date.now() - start}ms`);
@@ -267,6 +268,7 @@ app.post("/poll/:callSid", async (req, res) => {
   await deleteResult(callSid);
 
   if (audioUrl === 'ERROR') {
+    deleteProcessStart(callSid).catch(() => {});
     log(callSid, '❌ POLL   background processing failed, looping back');
     res.type("text/xml");
     res.send(`
@@ -277,7 +279,10 @@ app.post("/poll/:callSid", async (req, res) => {
     return;
   }
 
-  log(callSid, '📤 POLL   ready, sending audio', audioUrl);
+  const processStart = await getProcessStart(callSid).catch(() => null);
+  const e2eMs = processStart ? Date.now() - processStart : null;
+  deleteProcessStart(callSid).catch(() => {});
+  log(callSid, '📤 POLL   ready, sending audio', `${audioUrl}${e2eMs !== null ? ` — e2e=${e2eMs}ms (user finished speaking → audio ready)` : ''}`);
   res.type("text/xml");
   res.send(recordTwiml(audioUrl));
 });

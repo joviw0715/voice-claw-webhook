@@ -123,6 +123,19 @@ async function deleteResult(callSid) {
   await getClient().del(`result:${callSid}`);
 }
 
+async function setProcessStart(callSid, timestampMs) {
+  await getClient().setex(`pstart:${callSid}`, RESULT_TTL, String(timestampMs));
+}
+
+async function getProcessStart(callSid) {
+  const v = await getClient().get(`pstart:${callSid}`);
+  return v ? parseInt(v) : null;
+}
+
+async function deleteProcessStart(callSid) {
+  await getClient().del(`pstart:${callSid}`);
+}
+
 // ─────────────────────────────────────────────
 
 
@@ -138,4 +151,7 @@ export {
   setResult,
   getResult,
   deleteResult,
+  setProcessStart,
+  getProcessStart,
+  deleteProcessStart,
 };
