@@ -33,7 +33,7 @@ function recordTwiml(audioUrl = null) {
 <Response>
   ${play}
   <Record action="${BASE_URL}/process" method="POST"
-          maxLength="30" timeout="3" playBeep="false"
+          maxLength="30" timeout="1" playBeep="false"
           trim="trim-silence" />
   <Redirect>${BASE_URL}/voice</Redirect>
 </Response>`.trim();
@@ -121,7 +121,7 @@ app.post("/voice", (req, res) => {
 <Response>
   <Say language="${LANGUAGE}">${FIRST_MESSAGE}</Say>
   <Record action="${BASE_URL}/process" method="POST"
-          maxLength="30" timeout="3" playBeep="false"
+          maxLength="30" timeout="1" playBeep="false"
           trim="trim-silence" />
   <Redirect>${BASE_URL}/voice</Redirect>
 </Response>`);
@@ -193,9 +193,10 @@ app.post("/process", async (req, res) => {
   const callSid = req.body.CallSid || 'unknown';
   const phone = req.body.From || 'unknown';
   const recordingUrl = req.body.RecordingUrl || '';
+  const recordingDuration = req.body.RecordingDuration || '?';
   const start = Date.now();
 
-  log(callSid, '▶  PROCESS START', `from=${phone}`);
+  log(callSid, '▶  PROCESS START', `from=${phone} recordingDuration=${recordingDuration}s — Twilio silence+upload delay not logged above`);
 
   // No recording — loop back
   if (!recordingUrl) {
@@ -282,7 +283,8 @@ app.post("/poll/:callSid", async (req, res) => {
   const processStart = await getProcessStart(callSid).catch(() => null);
   const e2eMs = processStart ? Date.now() - processStart : null;
   deleteProcessStart(callSid).catch(() => {});
-  log(callSid, '📤 POLL   ready, sending audio', `${audioUrl}${e2eMs !== null ? ` — e2e=${e2eMs}ms (user finished speaking → audio ready)` : ''}`);
+  const ttsReadyAt = new Date().toISOString();
+  log(callSid, '📤 POLL   ready, sending audio', `${audioUrl}${e2eMs !== null ? ` — e2e=${e2eMs}ms (user finished speaking → audio ready @ ${ttsReadyAt}; add ~1s Twilio playback buffer for real perceived latency)` : ''}`);
   res.type("text/xml");
   res.send(recordTwiml(audioUrl));
 });
