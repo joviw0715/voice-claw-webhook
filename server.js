@@ -154,7 +154,9 @@ User memory:
 ${JSON.stringify(memory)}
 
 Knowledge:
-${knowledge.join('\n')}`;
+${knowledge.join('\n')}
+
+每次只講一至兩句，唔好長篇大論。`;
 
     log(callSid, '3/5 LLM    querying', `history=${history.length} msgs`);
     const t3 = Date.now();
