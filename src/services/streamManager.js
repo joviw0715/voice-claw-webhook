@@ -453,7 +453,7 @@ export function createCallHandler(ws, log) {
       const knowledgeSection = hotlineKnowledge ? `\nKnowledge:\n${hotlineKnowledge}` : '';
       const ragSection = ragChunks.length > 0 ? `\nRelevant knowledge:\n${ragChunks.join('\n---\n')}` : '';
       const hkNow = new Intl.DateTimeFormat('zh-HK', { timeZone: 'Asia/Hong_Kong', year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date());
-      const genderHint = callerGender === 'female' ? '\n來電者聲音為女性，請用「小姐」稱呼。' : callerGender === 'male' ? '\n來電者聲音為男性，請用「先生」稱呼。' : '\n未能判斷來電者性別，唔好用「先生/小姐」，第一次稱呼時請問：「請問點稱呼你？」';
+      const genderHint = callerGender === 'female' ? '\n來電者聲音為女性，請用「小姐」稱呼。' : callerGender === 'male' ? '\n來電者聲音為男性，請用「先生」稱呼。' : '\n未能判斷來電者性別。第一次需要稱呼對方時，請問：「請問係先生定小姐？」，之後按回答用「先生」或「小姐」稱呼。';
       const systemPrompt = `${paramSystemPrompt || SYSTEM_PROMPT}\nUser memory: ${JSON.stringify(memory)}${knowledgeSection}${ragSection}\n現在香港時間：${hkNow}${genderHint}\n重要：唔好用「您好」、「你好」或任何問候語開始每次回覆——已經係通話中，直接答問題就好。每次只講一至兩句，唔好長篇大論。必須只用繁體中文（廣東話）回覆，唔好用英文。`;
 
       let fullReply = '';
@@ -729,10 +729,13 @@ export function createCallHandler(ws, log) {
         const mulaw = Buffer.from(msg.media.payload, 'base64');
         const pcm = mulawDecode(mulaw);
         stt.write(pcm);
-        // Buffer PCM for gender detection (first utterance only, max 3s = 48000 bytes at 8kHz 16-bit)
-        if (firstUtterancePcm !== null && state === 'LISTENING') {
-          const buffered = firstUtterancePcm.reduce((s, b) => s + b.length, 0);
-          if (buffered < 48000) firstUtterancePcm.push(Buffer.from(pcm));
+        // Rolling buffer for gender detection — keep most recent 3s so we capture actual speech not pre-speech silence
+        if (firstUtterancePcm !== null) {
+          firstUtterancePcm.push(Buffer.from(pcm));
+          let total = firstUtterancePcm.reduce((s, b) => s + b.length, 0);
+          while (total > 48000 && firstUtterancePcm.length > 1) {
+            total -= firstUtterancePcm.shift().length;
+          }
         }
         return;
       }
