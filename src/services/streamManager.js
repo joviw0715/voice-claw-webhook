@@ -332,10 +332,10 @@ export function createCallHandler(ws, log) {
         }
         log(callSid, '👂 STT', `"${text}"`);
         if (state === 'LISTENING' && text.trim().length >= 2) {
-          // Run gender detection on first utterance only
+          // Run gender detection on first utterance only (once per call)
           if (callerGender === 'unknown' && firstUtterancePcm.length > 0) {
             const pcmBuffer = Buffer.concat(firstUtterancePcm);
-            firstUtterancePcm = []; // free memory
+            firstUtterancePcm = null; // free memory and prevent further buffering
             callerGender = detectGender(pcmBuffer);
             log(callSid, '🎙️  GENDER', `detected=${callerGender} (${pcmBuffer.length} bytes PCM)`);
           }
@@ -729,7 +729,7 @@ export function createCallHandler(ws, log) {
         const pcm = mulawDecode(mulaw);
         stt.write(pcm);
         // Buffer PCM for gender detection (first utterance only, max 3s = 48000 bytes at 8kHz 16-bit)
-        if (callerGender === 'unknown' && state === 'LISTENING') {
+        if (firstUtterancePcm !== null && state === 'LISTENING') {
           const buffered = firstUtterancePcm.reduce((s, b) => s + b.length, 0);
           if (buffered < 48000) firstUtterancePcm.push(Buffer.from(pcm));
         }
