@@ -558,12 +558,24 @@ export function createCallHandler(ws, log) {
         }
 
         log(callSid, '✅ TURN DONE', `"${cleanReply.slice(0, 80).replace(/[\n\r]/g, '↵')}" (${Date.now() - t0}ms)`);
-        await saveContext(callSid, [
-          ...updatedHistory,
-          { role: 'assistant', content: cleanReply },
-        ]);
+        const newHistory = [...updatedHistory, { role: 'assistant', content: cleanReply }];
+        await saveContext(callSid, newHistory);
         ttsEndedAt = Date.now();
         state = 'LISTENING';
+
+        // Push live transcript to console (fire-and-forget, inbound only)
+        if (direction === 'inbound') {
+          const consoleUrl = (process.env.CONSOLE_CALLBACK_URL || '').replace(/\/$/, '');
+          if (consoleUrl && callSid !== 'unknown') {
+            const liveTranscript = newHistory
+              .map(m => `${m.role === 'user' ? 'User' : 'Agent'}: ${m.content}`)
+              .join('\n');
+            axios.post(`${consoleUrl}/api/webhooks/inbound/transcript-update`, {
+              call_sid: callSid,
+              transcript: liveTranscript,
+            }, { timeout: 3000 }).catch(() => {});
+          }
+        }
         // Save memory after each turn while name is still unknown — the name
         // exchange is the first thing captured and can be sliced out of history later
         if (!memory.name) summarizeAndSaveMemory();
