@@ -7,6 +7,7 @@ import { streamQueryLLM, streamQueryOpenRouter, streamQueryGroq, streamQueryGemi
 import { getContext, saveContext, getUserMemory, updateUserMemory } from './redisClient.js';
 import { retrieveKnowledge } from './qdrantClient.js';
 import { getNextAmbientMulawChunk } from '../utils/ambientMixer.js';
+import { detectGender } from '../utils/genderDetect.js';
 
 async function fetchHotlineKnowledge(hotlineId) {
   const consoleUrl = (process.env.CONSOLE_CALLBACK_URL || '').replace(/\/$/, '');
@@ -136,6 +137,8 @@ export function createCallHandler(ws, log) {
   let ttsEndedAt = 0;
   let ttsLastChunkAt = 0;
   let ambientTimer = null; // continuous background audio loop
+  let callerGender = 'unknown'; // detected from first utterance pitch analysis
+  let firstUtterancePcm = []; // PCM chunks collected until first gender detection
 
   function startAmbientLoop() {
     if (ambientTimer) return;
@@ -329,6 +332,13 @@ export function createCallHandler(ws, log) {
         }
         log(callSid, '👂 STT', `"${text}"`);
         if (state === 'LISTENING' && text.trim().length >= 2) {
+          // Run gender detection on first utterance only
+          if (callerGender === 'unknown' && firstUtterancePcm.length > 0) {
+            const pcmBuffer = Buffer.concat(firstUtterancePcm);
+            firstUtterancePcm = []; // free memory
+            callerGender = detectGender(pcmBuffer);
+            log(callSid, '🎙️  GENDER', `detected=${callerGender} (${pcmBuffer.length} bytes PCM)`);
+          }
           handleUserSpeech(text.trim());
         }
       },
@@ -442,7 +452,8 @@ export function createCallHandler(ws, log) {
       const knowledgeSection = hotlineKnowledge ? `\nKnowledge:\n${hotlineKnowledge}` : '';
       const ragSection = ragChunks.length > 0 ? `\nRelevant knowledge:\n${ragChunks.join('\n---\n')}` : '';
       const hkNow = new Intl.DateTimeFormat('zh-HK', { timeZone: 'Asia/Hong_Kong', year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date());
-      const systemPrompt = `${paramSystemPrompt || SYSTEM_PROMPT}\nUser memory: ${JSON.stringify(memory)}${knowledgeSection}${ragSection}\n現在香港時間：${hkNow}\n重要：唔好用「您好」、「你好」或任何問候語開始每次回覆——已經係通話中，直接答問題就好。每次只講一至兩句，唔好長篇大論。必須只用繁體中文（廣東話）回覆，唔好用英文。`;
+      const genderHint = callerGender === 'female' ? '\n來電者聲音為女性，請用「小姐」稱呼。' : callerGender === 'male' ? '\n來電者聲音為男性，請用「先生」稱呼。' : '';
+      const systemPrompt = `${paramSystemPrompt || SYSTEM_PROMPT}\nUser memory: ${JSON.stringify(memory)}${knowledgeSection}${ragSection}\n現在香港時間：${hkNow}${genderHint}\n重要：唔好用「您好」、「你好」或任何問候語開始每次回覆——已經係通話中，直接答問題就好。每次只講一至兩句，唔好長篇大論。必須只用繁體中文（廣東話）回覆，唔好用英文。`;
 
       let fullReply = '';
       let sentenceBuf = '';
@@ -715,7 +726,13 @@ export function createCallHandler(ws, log) {
 
       if (msg.event === 'media' && stt && state !== 'IDLE') {
         const mulaw = Buffer.from(msg.media.payload, 'base64');
-        stt.write(mulawDecode(mulaw));
+        const pcm = mulawDecode(mulaw);
+        stt.write(pcm);
+        // Buffer PCM for gender detection (first utterance only, max 3s = 48000 bytes at 8kHz 16-bit)
+        if (callerGender === 'unknown' && state === 'LISTENING') {
+          const buffered = firstUtterancePcm.reduce((s, b) => s + b.length, 0);
+          if (buffered < 48000) firstUtterancePcm.push(Buffer.from(pcm));
+        }
         return;
       }
 
