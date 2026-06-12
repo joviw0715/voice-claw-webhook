@@ -333,7 +333,7 @@ export function createCallHandler(ws, log) {
         log(callSid, '👂 STT', `"${text}"`);
         if (state === 'LISTENING' && text.trim().length >= 2) {
           // Run gender detection on first utterance only (once per call)
-          if (callerGender === 'unknown' && firstUtterancePcm.length > 0) {
+          if (firstUtterancePcm !== null && firstUtterancePcm.length > 0) {
             const pcmBuffer = Buffer.concat(firstUtterancePcm);
             firstUtterancePcm = null; // free memory and prevent further buffering
             callerGender = detectGender(pcmBuffer);
