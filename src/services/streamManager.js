@@ -335,9 +335,10 @@ export function createCallHandler(ws, log) {
           // Run gender detection on first utterance only (once per call)
           if (firstUtterancePcm !== null && firstUtterancePcm.length > 0) {
             const pcmBuffer = Buffer.concat(firstUtterancePcm);
-            firstUtterancePcm = null; // free memory and prevent further buffering
-            callerGender = detectGender(pcmBuffer);
-            log(callSid, '🎙️  GENDER', `detected=${callerGender} (${pcmBuffer.length} bytes PCM)`);
+            firstUtterancePcm = null;
+            const result = detectGender(pcmBuffer);
+            callerGender = result.gender;
+            log(callSid, '🎙️  GENDER', `detected=${result.gender} hz=${result.hz} rms=${result.rms} corr=${result.corr} reason=${result.reason} (${pcmBuffer.length} bytes)`);
           }
           handleUserSpeech(text.trim());
         }
@@ -452,7 +453,7 @@ export function createCallHandler(ws, log) {
       const knowledgeSection = hotlineKnowledge ? `\nKnowledge:\n${hotlineKnowledge}` : '';
       const ragSection = ragChunks.length > 0 ? `\nRelevant knowledge:\n${ragChunks.join('\n---\n')}` : '';
       const hkNow = new Intl.DateTimeFormat('zh-HK', { timeZone: 'Asia/Hong_Kong', year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date());
-      const genderHint = callerGender === 'female' ? '\n來電者聲音為女性，請用「小姐」稱呼。' : callerGender === 'male' ? '\n來電者聲音為男性，請用「先生」稱呼。' : '';
+      const genderHint = callerGender === 'female' ? '\n來電者聲音為女性，請用「小姐」稱呼。' : callerGender === 'male' ? '\n來電者聲音為男性，請用「先生」稱呼。' : '\n未能判斷來電者性別，唔好用「先生/小姐」，第一次稱呼時請問：「請問點稱呼你？」';
       const systemPrompt = `${paramSystemPrompt || SYSTEM_PROMPT}\nUser memory: ${JSON.stringify(memory)}${knowledgeSection}${ragSection}\n現在香港時間：${hkNow}${genderHint}\n重要：唔好用「您好」、「你好」或任何問候語開始每次回覆——已經係通話中，直接答問題就好。每次只講一至兩句，唔好長篇大論。必須只用繁體中文（廣東話）回覆，唔好用英文。`;
 
       let fullReply = '';
