@@ -85,10 +85,11 @@ async function updateUserMemory(phoneNumber, updates) {
   const key = `mem:${phoneNumber}`;
   const existing = await getUserMemory(phoneNumber);
 
-  // ✅ safe merge
+  // Name always overwrites — caller may give a different name on a new call
   const merged = {
     ...existing,
-    ...updates
+    ...updates,
+    ...(updates.name ? { name: updates.name } : {}),
   };
 
   await getClient().setex(
