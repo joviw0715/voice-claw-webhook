@@ -303,10 +303,22 @@ const server = app.listen(process.env.PORT || 3000, () => {
   console.log(`[server] running on port ${process.env.PORT || 3000}`);
 });
 
-// WebSocket server for Twilio Media Streams (used when USE_MEDIA_STREAMS=true)
-const wss = new WebSocketServer({ server, path: '/stream' });
+// Single WebSocket server — route by path to support both Twilio (/stream) and FreeSWITCH (/stream-fs)
+const wss = new WebSocketServer({ noServer: true });
+const wss_fs = new WebSocketServer({ noServer: true });
+
+server.on('upgrade', (req, socket, head) => {
+  const pathname = new URL(req.url, 'http://localhost').pathname;
+  if (pathname === '/stream') {
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+  } else if (pathname === '/stream-fs') {
+    wss_fs.handleUpgrade(req, socket, head, (ws) => wss_fs.emit('connection', ws, req));
+  } else {
+    socket.destroy();
+  }
+});
+
 wss.on('connection', (ws) => {
-  // Ping every 20s to keep the connection alive through proxies (Zeabur/Nginx/Cloudflare)
   const pingTimer = setInterval(() => { if (ws.readyState === ws.OPEN) ws.ping(); }, 20000);
   const handler = createCallHandler(ws, log);
   ws.on('message', (data) => handler.onMessage(data.toString()));
@@ -314,8 +326,6 @@ wss.on('connection', (ws) => {
   ws.on('error', (err) => console.error('[ws] error:', err.message));
 });
 
-// WebSocket server for FreeSWITCH mod_audio_stream (raw binary mulaw protocol)
-const wss_fs = new WebSocketServer({ server, path: '/stream-fs' });
 wss_fs.on('connection', (ws, req) => {
   const pingTimer = setInterval(() => { if (ws.readyState === ws.OPEN) ws.ping(); }, 20000);
   const handler = createFsCallHandler(ws, req, log);
