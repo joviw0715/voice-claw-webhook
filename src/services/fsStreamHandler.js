@@ -23,6 +23,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const AUDIO_DIR = join(__dirname, '../../audio');
 const BASE_URL = (process.env.FS_BASE_URL || process.env.BASE_URL || '').replace(/\/$/, '');
 
+console.log('[fs-stream] AUDIO_DIR:', AUDIO_DIR, 'BASE_URL:', BASE_URL);
+
 // ESL connection for uuid_broadcast — lazy-connect when needed
 async function eslBroadcast(fsUuid, fileUrl) {
   const eslHost = process.env.FS_ESL_HOST || '127.0.0.1';
@@ -100,6 +102,10 @@ export function createFsCallHandler(ws, req, log) {
       await writeMulawFile(chunks, filename);
       const fileUrl = `${BASE_URL}/audio/${filename}`;
       log(callSid, '🔊 ESL PLAY', fileUrl);
+      // Verify file exists before broadcasting
+      const { statSync } = await import('fs');
+      const stat = statSync(join(AUDIO_DIR, filename));
+      log(callSid, '📁 FILE SIZE', `${stat.size} bytes`);
       await eslBroadcast(fsUuid, fileUrl);
     } catch (err) {
       log(callSid, '⚠ ESL ERR', err.message);
