@@ -14,6 +14,10 @@ import { createSttStream } from './streamingStt.js';
 import { synthesizeToStream } from './streamingTts.js';
 import { streamQueryGemini, streamQueryLLM } from './openClawLlm.js';
 import { getContext, saveContext, getUserMemory } from './redisClient.js';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+const { Connection: EslConnection } = require('modesl');
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const AUDIO_DIR = join(__dirname, '../../audio');
@@ -26,17 +30,14 @@ async function eslBroadcast(fsUuid, fileUrl) {
   const eslPass = process.env.FS_ESL_PASSWORD || 'CHANGEME_ESL_PASS';
 
   return new Promise((resolve, reject) => {
-    // Dynamic import so ESL library isn't required for Twilio-only deployments
-    import('modesl').then(({ Connection }) => {
-      const conn = new Connection(eslHost, eslPort, eslPass, () => {
-        conn.api('uuid_broadcast', `${fsUuid} ${fileUrl} aleg`, () => {
-          conn.disconnect();
-          resolve();
-        });
+    const conn = new EslConnection(eslHost, eslPort, eslPass, () => {
+      conn.api('uuid_broadcast', `${fsUuid} ${fileUrl} aleg`, () => {
+        conn.disconnect();
+        resolve();
       });
-      conn.on('error', (err) => reject(new Error(`ESL error: ${err.message}`)));
-      setTimeout(() => reject(new Error('ESL timeout')), 5000);
-    }).catch(reject);
+    });
+    conn.on('error', (err) => reject(new Error(`ESL error: ${err.message}`)));
+    setTimeout(() => reject(new Error('ESL timeout')), 5000);
   });
 }
 
