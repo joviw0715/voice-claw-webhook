@@ -1,8 +1,9 @@
 // FreeSWITCH audio stream handler for /stream-fs WebSocket endpoint.
 // mod_audio_stream (amigniter fork) sends:
 //   - First message: JSON metadata {"uuid":"...","direction":"..."}
-//   - Subsequent messages: binary raw mulaw 8kHz audio frames
-// Replies with binary raw mulaw 8kHz audio frames for TTS playback.
+//   - Subsequent messages: binary raw PCM16LE 8kHz audio frames
+// Replies with binary raw PCM16LE frames for TTS playback.
+// synthesizeToStream produces mulaw, so we decode mulaw→PCM before sending back.
 
 import { decode as mulawDecode } from '../utils/mulaw.js';
 import { createSttStream } from './streamingStt.js';
@@ -30,7 +31,10 @@ export function createFsCallHandler(ws, req, log) {
   function sendAudio(mulawBuffer) {
     if (ws.readyState !== ws.OPEN) return;
     ttsLastChunkAt = Date.now();
-    ws.send(mulawBuffer);
+    // mod_audio_stream expects raw LINEAR PCM 16-bit LE, not mulaw.
+    // synthesizeToStream produces mulaw buffers (same as Twilio path), so decode first.
+    const pcm = mulawDecode(mulawBuffer);
+    ws.send(pcm);
   }
 
   function interrupt(reason) {
@@ -194,10 +198,10 @@ export function createFsCallHandler(ws, req, log) {
       }
 
       if (stt && state !== 'IDLE') {
-        const pcm = mulawDecode(data);
-        stt.write(pcm);
+        // mod_audio_stream sends raw PCM16LE — pass directly to STT (no mulaw decode needed)
+        stt.write(data);
         if (firstUtterancePcm !== null) {
-          firstUtterancePcm.push(Buffer.from(pcm));
+          firstUtterancePcm.push(Buffer.from(data));
           let total = firstUtterancePcm.reduce((s, b) => s + b.length, 0);
           while (total > 48000 && firstUtterancePcm.length > 1) {
             total -= firstUtterancePcm.shift().length;
