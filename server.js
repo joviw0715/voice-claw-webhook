@@ -10,6 +10,7 @@ import { synthesizeSpeech } from "./src/services/minimaxTts.js";
 import { retrieveKnowledge } from "./src/services/qdrantClient.js";
 import { transcribeAudio } from "./src/services/azureStt.js";
 import { createCallHandler } from "./src/services/streamManager.js";
+import { createFsCallHandler } from "./src/services/fsStreamHandler.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -311,4 +312,14 @@ wss.on('connection', (ws) => {
   ws.on('message', (data) => handler.onMessage(data.toString()));
   ws.on('close', (code, reason) => { clearInterval(pingTimer); handler.onClose(code, reason?.toString() || ''); });
   ws.on('error', (err) => console.error('[ws] error:', err.message));
+});
+
+// WebSocket server for FreeSWITCH mod_audio_stream (raw binary mulaw protocol)
+const wss_fs = new WebSocketServer({ server, path: '/stream-fs' });
+wss_fs.on('connection', (ws, req) => {
+  const pingTimer = setInterval(() => { if (ws.readyState === ws.OPEN) ws.ping(); }, 20000);
+  const handler = createFsCallHandler(ws, req, log);
+  ws.on('message', (data, isBinary) => handler.onMessage(data, isBinary));
+  ws.on('close', (code, reason) => { clearInterval(pingTimer); handler.onClose(code, reason?.toString() || ''); });
+  ws.on('error', (err) => console.error('[ws-fs] error:', err.message));
 });
