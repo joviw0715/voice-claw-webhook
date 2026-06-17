@@ -63,12 +63,15 @@ export function createFsCallHandler(ws, req, log) {
   const callerPhone  = url.searchParams.get('phone') || 'unknown';
 
   let callSid   = `fs-${Date.now()}`;
-  let fsUuid    = null; // actual FreeSWITCH call UUID from metadata frame
+  let fsUuid    = url.searchParams.get('uuid') || null; // passed from dialplan ${uuid}
   let phone     = callerPhone;
   let stt       = null;
   let state     = 'IDLE';
   let ttsLastAt = 0;
   let llmAborted = false;
+
+  // If uuid was passed in query string, update callSid immediately
+  if (fsUuid) callSid = `fs-${fsUuid}`;
 
   async function playTts(text, { onDone, onError } = {}) {
     if (!fsUuid) {
@@ -213,31 +216,22 @@ export function createFsCallHandler(ws, req, log) {
 
   // ── Start the session ────────────────────────────────────────────────────
 
-  log(callSid, '🎙️ FS STREAM OPEN', `direction=${direction} voice=${voiceId}`);
+  log(callSid, '🎙️ FS STREAM OPEN', `direction=${direction} voice=${voiceId} uuid=${fsUuid}`);
 
-  // Defer greeting until we have the fsUuid from the first metadata frame
-  let greetingPending = true;
-
-  function maybeStartGreeting() {
-    if (!greetingPending || !fsUuid) return;
-    greetingPending = false;
-    if (direction === 'inbound') {
-      getUserMemory(phone).then(memory => {
-        const name = memory?.name;
-        const text = greetingText || (name
-          ? `你好呀${name}，我係祖兒，你今日點呀？`
-          : (process.env.FIRST_MESSAGE || '你好，我係祖兒，請問點稱呼你呀？'));
-        speakGreeting(text);
-      }).catch(() => {
-        speakGreeting(greetingText || process.env.FIRST_MESSAGE || '你好，我係祖兒，請問點稱呼你呀？');
-      });
-    } else {
-      speakGreeting(greetingText || process.env.FIRST_MESSAGE || '你好，請問係咪方便聽電話？');
-    }
+  // Start greeting immediately (uuid is passed via query param from dialplan)
+  if (direction === 'inbound') {
+    getUserMemory(phone).then(memory => {
+      const name = memory?.name;
+      const text = greetingText || (name
+        ? `你好呀${name}，我係祖兒，你今日點呀？`
+        : (process.env.FIRST_MESSAGE || '你好，我係祖兒，請問點稱呼你呀？'));
+      speakGreeting(text);
+    }).catch(() => {
+      speakGreeting(greetingText || process.env.FIRST_MESSAGE || '你好，我係祖兒，請問點稱呼你呀？');
+    });
+  } else {
+    speakGreeting(greetingText || process.env.FIRST_MESSAGE || '你好，請問係咪方便聽電話？');
   }
-
-  // Fallback: start greeting after 2s even if no metadata frame arrives
-  setTimeout(maybeStartGreeting, 2000);
 
   // ── Public interface ─────────────────────────────────────────────────────
 
@@ -246,11 +240,10 @@ export function createFsCallHandler(ws, req, log) {
       if (!isBinary) {
         try {
           const meta = JSON.parse(data.toString());
-          if (meta.uuid) {
+          if (meta.uuid && !fsUuid) {
             fsUuid = meta.uuid;
             callSid = `fs-${meta.uuid}`;
             log(callSid, '📋 FS META', `uuid=${meta.uuid}`);
-            maybeStartGreeting();
           }
         } catch {}
         return;
