@@ -17,7 +17,7 @@ import { getContext, saveContext, getUserMemory } from './redisClient.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const AUDIO_DIR = join(__dirname, '../../audio');
-const BASE_URL = (process.env.BASE_URL || '').replace(/\/$/, '');
+const BASE_URL = (process.env.FS_BASE_URL || process.env.BASE_URL || '').replace(/\/$/, '');
 
 // ESL connection for uuid_broadcast — lazy-connect when needed
 async function eslBroadcast(fsUuid, fileUrl) {
