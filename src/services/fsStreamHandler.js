@@ -1,15 +1,58 @@
 // FreeSWITCH audio stream handler for /stream-fs WebSocket endpoint.
-// mod_audio_stream (amigniter fork) sends:
-//   - First message: JSON metadata {"uuid":"...","direction":"..."}
-//   - Subsequent messages: binary raw PCM16LE 8kHz audio frames
-// Replies with binary raw PCM16LE frames for TTS playback.
-// synthesizeToStream produces mulaw, so we decode mulaw→PCM before sending back.
+// Audio IN:  mod_audio_stream sends raw PCM16LE 8kHz binary frames
+// Audio OUT: TTS mulaw chunks → .ulaw file in /audio → ESL uuid_broadcast to FreeSWITCH
+//
+// mod_audio_stream community edition is unidirectional (server→caller playback is commercial).
+// Workaround: write TTS audio as a .ulaw file served over HTTP, then use FreeSWITCH ESL
+// uuid_broadcast to play it back directly from the host.
 
-import { decode as mulawDecode } from '../utils/mulaw.js';
+import { createWriteStream, unlink } from 'fs';
+import { join } from 'path';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 import { createSttStream } from './streamingStt.js';
 import { synthesizeToStream } from './streamingTts.js';
 import { streamQueryGemini, streamQueryLLM } from './openClawLlm.js';
 import { getContext, saveContext, getUserMemory } from './redisClient.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const AUDIO_DIR = join(__dirname, '../../audio');
+const BASE_URL = (process.env.BASE_URL || '').replace(/\/$/, '');
+
+// ESL connection for uuid_broadcast — lazy-connect when needed
+async function eslBroadcast(fsUuid, fileUrl) {
+  const eslHost = process.env.FS_ESL_HOST || '127.0.0.1';
+  const eslPort = parseInt(process.env.FS_ESL_PORT || '8021');
+  const eslPass = process.env.FS_ESL_PASSWORD || 'CHANGEME_ESL_PASS';
+
+  return new Promise((resolve, reject) => {
+    // Dynamic import so ESL library isn't required for Twilio-only deployments
+    import('modesl').then(({ Connection }) => {
+      const conn = new Connection(eslHost, eslPort, eslPass, () => {
+        conn.api('uuid_broadcast', `${fsUuid} ${fileUrl} aleg`, () => {
+          conn.disconnect();
+          resolve();
+        });
+      });
+      conn.on('error', (err) => reject(new Error(`ESL error: ${err.message}`)));
+      setTimeout(() => reject(new Error('ESL timeout')), 5000);
+    }).catch(reject);
+  });
+}
+
+// Write mulaw chunks to a temp .ulaw file, return the filename
+function writeMulawFile(mulawChunks, filename) {
+  return new Promise((resolve, reject) => {
+    const filePath = join(AUDIO_DIR, filename);
+    const ws = createWriteStream(filePath);
+    for (const chunk of mulawChunks) ws.write(chunk);
+    ws.end();
+    ws.on('finish', () => resolve(filePath));
+    ws.on('error', reject);
+  });
+}
+
+let fileSeq = 0;
 
 export function createFsCallHandler(ws, req, log) {
   const url = new URL(req.url, 'http://localhost');
@@ -19,37 +62,57 @@ export function createFsCallHandler(ws, req, log) {
   const systemPrompt = url.searchParams.get('systemPrompt') || '';
   const callerPhone  = url.searchParams.get('phone') || 'unknown';
 
-  let callSid = `fs-${Date.now()}`;
-  let phone   = callerPhone;
-  let stt     = null;
-  let state   = 'IDLE';
-  let ttsLastChunkAt = 0;
-  let cancelTts = null;
+  let callSid   = `fs-${Date.now()}`;
+  let fsUuid    = null; // actual FreeSWITCH call UUID from metadata frame
+  let phone     = callerPhone;
+  let stt       = null;
+  let state     = 'IDLE';
+  let ttsLastAt = 0;
   let llmAborted = false;
-  let firstUtterancePcm = [];
 
-  function sendAudio(mulawBuffer) {
-    if (ws.readyState !== ws.OPEN) return;
-    ttsLastChunkAt = Date.now();
-    // mod_audio_stream expects JSON: {"type":"streamAudio","data":{"audioData":"<base64-PCM16LE>","audioDataType":"raw","sampleRate":8000}}
-    // synthesizeToStream produces mulaw, decode to PCM16LE first
-    const pcm = mulawDecode(mulawBuffer);
-    ws.send(JSON.stringify({
-      type: 'streamAudio',
-      data: {
-        audioData: pcm.toString('base64'),
-        audioDataType: 'raw',
-        sampleRate: 8000,
-      },
-    }));
+  async function playTts(text, { onDone, onError } = {}) {
+    if (!fsUuid) {
+      log(callSid, '⚠ NO UUID YET — buffering TTS');
+    }
+    const chunks = [];
+    await new Promise((resolve) => {
+      synthesizeToStream(text, {
+        voiceId,
+        onChunk(buf) { chunks.push(buf); },
+        onDone() { resolve(); },
+        onError(err) { log(callSid, '⚠ TTS ERR', err.message); resolve(); },
+      });
+    });
+
+    if (!chunks.length || !fsUuid) {
+      onDone?.();
+      return;
+    }
+
+    ttsLastAt = Date.now();
+    const seq = ++fileSeq;
+    const filename = `fs-${callSid}-${seq}.ulaw`;
+    try {
+      await writeMulawFile(chunks, filename);
+      const fileUrl = `${BASE_URL}/audio/${filename}`;
+      log(callSid, '🔊 ESL PLAY', fileUrl);
+      await eslBroadcast(fsUuid, fileUrl);
+    } catch (err) {
+      log(callSid, '⚠ ESL ERR', err.message);
+    }
+
+    // Clean up temp file after 30s (enough time for playback)
+    setTimeout(() => {
+      unlink(join(AUDIO_DIR, filename), () => {});
+    }, 30000);
+
+    onDone?.();
   }
 
   function interrupt(reason) {
     if (state === 'SPEAKING' || state === 'THINKING') {
       log(callSid, '🔇 INTERRUPT', reason);
       llmAborted = true;
-      cancelTts?.();
-      cancelTts = null;
       state = 'LISTENING';
     }
   }
@@ -58,13 +121,13 @@ export function createFsCallHandler(ws, req, log) {
     state = 'LISTENING';
     stt = createSttStream({
       onInterim(text) {
-        if (Date.now() - ttsLastChunkAt < 1500) return;
+        if (Date.now() - ttsLastAt < 1500) return;
         if ((state === 'SPEAKING' || state === 'THINKING') && text.length >= 2) {
           interrupt(`user interim: "${text.slice(0, 30)}"`);
         }
       },
       onFinal(text) {
-        if (Date.now() - ttsLastChunkAt < 1500) {
+        if (Date.now() - ttsLastAt < 1500) {
           log(callSid, '🔇 ECHO SUPPRESSED', `"${text.slice(0, 30)}"`);
           return;
         }
@@ -112,29 +175,12 @@ export function createFsCallHandler(ws, req, log) {
         if (/[。？！\n]/.test(ttsBuffer)) {
           const chunk = ttsBuffer.trim();
           ttsBuffer = '';
-          if (chunk) {
-            await new Promise((resolve) => {
-              synthesizeToStream(chunk, {
-                voiceId,
-                onChunk(buf) { sendAudio(buf); },
-                onDone() { resolve(); },
-                onError(err) { log(callSid, '⚠ TTS ERR', err.message); resolve(); },
-              });
-            });
-          }
+          if (chunk) await playTts(chunk);
           if (llmAborted) break;
         }
       }
-
       if (ttsBuffer.trim() && !llmAborted) {
-        await new Promise((resolve) => {
-          synthesizeToStream(ttsBuffer.trim(), {
-            voiceId,
-            onChunk(buf) { sendAudio(buf); },
-            onDone() { resolve(); },
-            onError(err) { log(callSid, '⚠ TTS ERR', err.message); resolve(); },
-          });
-        });
+        await playTts(ttsBuffer.trim());
       }
     } catch (err) {
       log(callSid, '⚠ LLM ERR', err.message);
@@ -156,17 +202,12 @@ export function createFsCallHandler(ws, req, log) {
   function speakGreeting(text) {
     state = 'SPEAKING';
     log(callSid, '🔊 FS GREETING', `"${text}" voice=${voiceId}`);
-    synthesizeToStream(text, {
-      voiceId,
-      onChunk(buf) { sendAudio(buf); },
-      onDone() {
-        saveContext(callSid, [{ role: 'assistant', content: text }]).catch(() => {});
-        startListening();
-      },
-      onError(err) {
-        log(callSid, '⚠ GREETING ERR', err.message);
-        startListening();
-      },
+    playTts(text).then(() => {
+      saveContext(callSid, [{ role: 'assistant', content: text }]).catch(() => {});
+      startListening();
+    }).catch((err) => {
+      log(callSid, '⚠ GREETING ERR', err.message);
+      startListening();
     });
   }
 
@@ -174,20 +215,29 @@ export function createFsCallHandler(ws, req, log) {
 
   log(callSid, '🎙️ FS STREAM OPEN', `direction=${direction} voice=${voiceId}`);
 
-  if (direction === 'inbound') {
-    getUserMemory(phone).then(memory => {
-      const name = memory?.name;
-      const text = greetingText || (name
-        ? `你好呀${name}，我係祖兒，你今日點呀？`
-        : (process.env.FIRST_MESSAGE || '你好，我係祖兒，請問點稱呼你呀？'));
-      speakGreeting(text);
-    }).catch(() => {
-      speakGreeting(greetingText || process.env.FIRST_MESSAGE || '你好，我係祖兒，請問點稱呼你呀？');
-    });
-  } else {
-    const text = greetingText || process.env.FIRST_MESSAGE || '你好，請問係咪方便聽電話？';
-    speakGreeting(text);
+  // Defer greeting until we have the fsUuid from the first metadata frame
+  let greetingPending = true;
+
+  function maybeStartGreeting() {
+    if (!greetingPending || !fsUuid) return;
+    greetingPending = false;
+    if (direction === 'inbound') {
+      getUserMemory(phone).then(memory => {
+        const name = memory?.name;
+        const text = greetingText || (name
+          ? `你好呀${name}，我係祖兒，你今日點呀？`
+          : (process.env.FIRST_MESSAGE || '你好，我係祖兒，請問點稱呼你呀？'));
+        speakGreeting(text);
+      }).catch(() => {
+        speakGreeting(greetingText || process.env.FIRST_MESSAGE || '你好，我係祖兒，請問點稱呼你呀？');
+      });
+    } else {
+      speakGreeting(greetingText || process.env.FIRST_MESSAGE || '你好，請問係咪方便聽電話？');
+    }
   }
+
+  // Fallback: start greeting after 2s even if no metadata frame arrives
+  setTimeout(maybeStartGreeting, 2000);
 
   // ── Public interface ─────────────────────────────────────────────────────
 
@@ -197,23 +247,17 @@ export function createFsCallHandler(ws, req, log) {
         try {
           const meta = JSON.parse(data.toString());
           if (meta.uuid) {
+            fsUuid = meta.uuid;
             callSid = `fs-${meta.uuid}`;
-            log(callSid, '📋 FS META', `uuid=${meta.uuid} dir=${meta.direction || direction}`);
+            log(callSid, '📋 FS META', `uuid=${meta.uuid}`);
+            maybeStartGreeting();
           }
         } catch {}
         return;
       }
 
       if (stt && state !== 'IDLE') {
-        // mod_audio_stream sends raw PCM16LE — pass directly to STT (no mulaw decode needed)
         stt.write(data);
-        if (firstUtterancePcm !== null) {
-          firstUtterancePcm.push(Buffer.from(data));
-          let total = firstUtterancePcm.reduce((s, b) => s + b.length, 0);
-          while (total > 48000 && firstUtterancePcm.length > 1) {
-            total -= firstUtterancePcm.shift().length;
-          }
-        }
       }
     },
 
@@ -221,7 +265,6 @@ export function createFsCallHandler(ws, req, log) {
       log(callSid, '📵 FS CLOSE', `code=${code} reason=${reason}`);
       stt?.end?.();
       stt = null;
-      cancelTts?.();
     },
   };
 }

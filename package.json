@@ -19,6 +19,7 @@
     "express": "5.2.1",
     "ioredis": "5.10.1",
     "microsoft-cognitiveservices-speech-sdk": "^1.42.0",
+    "modesl": "^1.2.1",
     "twilio": "6.0.2",
     "ws": "^8.20.1"
   }
