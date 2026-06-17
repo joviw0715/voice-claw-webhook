@@ -31,10 +31,17 @@ export function createFsCallHandler(ws, req, log) {
   function sendAudio(mulawBuffer) {
     if (ws.readyState !== ws.OPEN) return;
     ttsLastChunkAt = Date.now();
-    // mod_audio_stream expects raw LINEAR PCM 16-bit LE, not mulaw.
-    // synthesizeToStream produces mulaw buffers (same as Twilio path), so decode first.
+    // mod_audio_stream expects JSON: {"type":"streamAudio","data":{"audioData":"<base64-PCM16LE>","audioDataType":"raw","sampleRate":8000}}
+    // synthesizeToStream produces mulaw, decode to PCM16LE first
     const pcm = mulawDecode(mulawBuffer);
-    ws.send(pcm);
+    ws.send(JSON.stringify({
+      type: 'streamAudio',
+      data: {
+        audioData: pcm.toString('base64'),
+        audioDataType: 'raw',
+        sampleRate: 8000,
+      },
+    }));
   }
 
   function interrupt(reason) {
