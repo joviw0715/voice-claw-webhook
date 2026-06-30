@@ -151,6 +151,12 @@ export function createFsCallHandler(ws, req, log) {
         stt = null;
         startListening();
       },
+      onSessionEnd(reason) {
+        // Azure closed the session (idle timeout, service restart) — reconnect silently
+        log(callSid, '🔄 STT RECONNECT', reason);
+        stt = null;
+        if (state !== 'IDLE') startListening();
+      },
     });
   }
 

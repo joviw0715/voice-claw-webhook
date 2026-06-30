@@ -29,13 +29,22 @@ export function createSttStream({ onInterim, onFinal, onError, onSessionEnd }) {
     }
   };
 
-  // Log ALL cancellation reasons (not just errors) so session expiry is visible
   recognizer.canceled = (_s, e) => {
     const reasonName = sdk.CancellationReason[e.reason] ?? String(e.reason);
     if (e.reason === sdk.CancellationReason.Error) {
-      onError(new Error(`STT canceled [${reasonName}]: ${e.errorDetails}`));
+      const details = e.errorDetails ?? '';
+      // Idle timeout and service restart are expected — reconnect silently
+      const isExpected =
+        details.includes('idle duration') ||
+        details.includes('shutting down') ||
+        e.errorCode === 1012 ||
+        e.errorCode === 1006;
+      if (isExpected) {
+        onSessionEnd?.(`canceled:${reasonName}`);
+      } else {
+        onError(new Error(`STT canceled [${reasonName}]: ${details}`));
+      }
     } else {
-      // EndOfStream, etc. — session is done but not an application error
       onSessionEnd?.(`canceled:${reasonName}`);
     }
   };
