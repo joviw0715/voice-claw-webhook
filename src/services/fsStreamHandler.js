@@ -100,7 +100,9 @@ export function createFsCallHandler(ws, req, log) {
     const filename = `fs-${callSid}-${seq}.ulaw`;
     try {
       await writeMulawFile(chunks, filename);
-      const fileUrl = `${BASE_URL}/audio/${filename}`;
+      const rawUrl = `${BASE_URL}/audio/${filename}`;
+      // FreeSWITCH needs http_cache:// prefix to play HTTP URLs via mod_http_cache
+      const fileUrl = rawUrl.startsWith('http') ? `http_cache://${rawUrl.replace(/^https?:\/\//, '')}` : rawUrl;
       log(callSid, '🔊 ESL PLAY', fileUrl);
       // Verify file exists before broadcasting
       const { statSync } = await import('fs');
