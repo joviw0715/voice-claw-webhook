@@ -1,9 +1,10 @@
 import twilio from 'twilio';
 import axios from 'axios';
 import { decode as mulawDecode } from '../utils/mulaw.js';
-import { createSttStream } from './streamingStt.js';
-import { synthesizeToStream } from './streamingTts.js';
-import { streamQueryLLM, streamQueryOpenRouter, streamQueryGroq, streamQueryGemini, classifyIntent } from './openClawLlm.js';
+import { getDefaultSttProvider, getSttProvider } from '../providers/stt/index.js';
+import { getDefaultTtsProvider, getTtsProvider } from '../providers/tts/index.js';
+import { getDefaultLlmProvider, getLlmProvider, streamWithFallback } from '../providers/llm/index.js';
+import { classifyIntent } from './openClawLlm.js';
 import { getContext, saveContext, getUserMemory, updateUserMemory } from './redisClient.js';
 import { retrieveKnowledge } from './qdrantClient.js';
 import { getNextAmbientMulawChunk } from '../utils/ambientMixer.js';
@@ -231,44 +232,17 @@ export function createCallHandler(ws, log) {
     }
   }
 
-  async function* geminiWithFallback(messages, phone) {
-    try {
-      for await (const tok of streamQueryGemini(messages)) {
-        yield tok;
-      }
-    } catch (err) {
-      log(callSid, '⚠  Gemini FAILED', `${err.message} status=${err.response?.status} data=${JSON.stringify(err.response?.data)?.slice(0,200)}`);
-      for await (const tok of openRouterWithFallback(messages, phone)) {
-        yield tok;
-      }
-    }
-  }
-
-  async function* groqWithFallback(messages, phone) {
-    try {
-      for await (const tok of streamQueryGroq(messages)) {
-        yield tok;
-      }
-    } catch (err) {
-      log(callSid, '⚠  Groq failed, falling back to OpenRouter/OpenClaw', err.message);
-      for await (const tok of openRouterWithFallback(messages, phone)) {
-        yield tok;
-      }
-    }
-  }
-
-  async function* openRouterWithFallback(messages, phone) {
-    try {
-      for await (const tok of streamQueryOpenRouter(messages)) {
-        yield tok;
-      }
-    } catch (err) {
-      log(callSid, '⚠  OpenRouter failed, falling back to OpenClaw', err.message);
-      for await (const tok of streamQueryLLM(messages, phone)) {
-        yield tok;
-      }
-    }
-  }
+  // Providers resolved once per call — async because Redis config may override env defaults.
+  // Resolution is fast (<50ms to Redis) so providers are always ready before any speech arrives.
+  let _llmProvider = null;
+  let _ttsProvider = null;
+  let _sttProvider = null;
+  const _providersReady = Promise.all([
+    getDefaultLlmProvider(),
+    getDefaultTtsProvider(),
+    getDefaultSttProvider(),
+  ]).then(([llm, tts, stt]) => { _llmProvider = llm; _ttsProvider = tts; _sttProvider = stt; })
+    .catch(err => console.warn('[providers] resolution failed, using auto-detect:', err.message));
 
   // ── WebSocket helpers ────────────────────────────────────────────────────
 
@@ -318,7 +292,8 @@ export function createCallHandler(ws, log) {
     if (resetState) state = 'LISTENING';
     const prevStt = stt;
     let thisStt;
-    thisStt = createSttStream({
+    const sttProvider = _sttProvider ?? getSttProvider('azure');
+    thisStt = sttProvider.createStream({
       onInterim(text) {
         if (stt !== thisStt) return; // superseded by a newer STT session
         if (Date.now() - ttsLastChunkAt < 1500) return; // TTS still playing — suppress echo
@@ -467,21 +442,18 @@ export function createCallHandler(ws, log) {
       const useGemini = !!process.env.GEMINI_API_KEY && (geminiDirect || intent === 'chat');
       const useGroq = !!process.env.GROQ_API_KEY && !useGemini && (geminiDirect || intent === 'chat');
       const useOpenRouter = !!process.env.LLM_API_KEY && !useGemini && !useGroq && (geminiDirect || intent === 'chat');
-      log(callSid, '🤖 LLM START', `${useGemini ? `Gemini${geminiDirect ? ' (direct)' : ''}` : useGroq ? 'Groq' : useOpenRouter ? 'OpenRouter' : 'OpenClaw'} (${Date.now() - t0}ms since user spoke)`);
+      await _providersReady;
+      const activeLlm = _llmProvider ?? getLlmProvider('openclaw');
+      log(callSid, '🤖 LLM START', `${activeLlm.constructor?.name ?? 'provider'} (${Date.now() - t0}ms since user spoke)`);
 
       const messages = [{ role: 'system', content: systemPrompt }, ...updatedHistory];
-      const llmStream = useGemini
-        ? geminiWithFallback(messages, phone)
-        : useGroq
-          ? groqWithFallback(messages, phone)
-          : useOpenRouter
-            ? openRouterWithFallback(messages, phone)
-            : streamQueryLLM(messages, phone);
+      const llmStream = streamWithFallback(activeLlm, messages, phone);
 
-      // For OpenClaw (tool queries): play an immediate Cantonese acknowledgment so the
+      // For openclaw (tool queries): play an immediate Cantonese acknowledgment so the
       // user gets feedback during the long processing time instead of silence.
-      // Only play filler for actual tool queries — not for conversational/booking replies.
-      if (!useGemini && !useGroq && !useOpenRouter && !llmAborted && intent === 'tools') {
+      // Only play filler when defaulting to openclaw and intent is tools.
+      const isOpenClaw = !useGemini && !useGroq && !useOpenRouter && process.env.USE_CTM_LLM !== 'true';
+      if (isOpenClaw && !llmAborted && intent === 'tools') {
         let filler = '好，等我幫你查下';
         if (/天氣|落雨|氣溫|溫度|晴天/.test(userText)) filler = '等我查下天氣先';
         else if (/幾點|時間|日期|星期/.test(userText)) filler = '等我睇下而家幾點';
@@ -597,7 +569,7 @@ export function createCallHandler(ws, log) {
 
   function speakSentence(text) {
     return new Promise((resolve) => {
-      const handle = synthesizeToStream(text, {
+      const handle = (_ttsProvider ?? getTtsProvider('minimax')).synthesizeToStream(text, {
         voiceId,
         onChunk(buf) { if (!llmAborted) sendMedia(buf); },
         onDone() { clearTimeout(hangGuard); cancelTts = null; resolve(); },
@@ -681,7 +653,7 @@ export function createCallHandler(ws, log) {
           }
           state = 'SPEAKING';
           log(callSid, '🔊 GREETING', `"${greetingText}" voice=${voiceId}`);
-          synthesizeToStream(greetingText, {
+          (_ttsProvider ?? getTtsProvider('minimax')).synthesizeToStream(greetingText, {
             voiceId,
             onChunk(buf) { sendMedia(buf); },
             onDone() {
@@ -695,7 +667,7 @@ export function createCallHandler(ws, log) {
               const fallbackVoice = process.env.MINIMAX_VOICE_ID || 'Cantonese_GentleLady';
               if (voiceId !== fallbackVoice) {
                 log(callSid, '🔊 GREETING RETRY', `falling back to voice=${fallbackVoice}`);
-                synthesizeToStream(greetingText, {
+                (_ttsProvider ?? getTtsProvider('minimax')).synthesizeToStream(greetingText, {
                   voiceId: fallbackVoice,
                   onChunk(buf) { sendMedia(buf); },
                   onDone() {
@@ -718,7 +690,7 @@ export function createCallHandler(ws, log) {
               : (process.env.FIRST_MESSAGE || '你好，我係祖兒呀，請問點稱呼你呀？'));
             state = 'SPEAKING';
             log(callSid, '🔊 GREETING', `"${greetingText}"`);
-            synthesizeToStream(greetingText, {
+            (_ttsProvider ?? getTtsProvider('minimax')).synthesizeToStream(greetingText, {
               voiceId,
               onChunk(buf) { sendMedia(buf); },
               onDone() { startListening(); },
@@ -728,7 +700,7 @@ export function createCallHandler(ws, log) {
             log(callSid, '⚠ GREETING MEM ERR', err.message);
             const greetingText = paramGreetingText || process.env.FIRST_MESSAGE || '你好，我係祖兒呀，請問點稱呼你呀？';
             state = 'SPEAKING';
-            synthesizeToStream(greetingText, {
+            (_ttsProvider ?? getTtsProvider('minimax')).synthesizeToStream(greetingText, {
               voiceId,
               onChunk(buf) { sendMedia(buf); },
               onDone() { startListening(); },

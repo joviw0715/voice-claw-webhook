@@ -10,9 +10,9 @@ import { createWriteStream, unlink } from 'fs';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
-import { createSttStream } from './streamingStt.js';
-import { synthesizeToStream } from './streamingTts.js';
-import { streamQueryGemini, streamQueryLLM } from './openClawLlm.js';
+import { getLlmProvider, getDefaultLlmProvider } from '../providers/llm/index.js';
+import { getTtsProvider, getDefaultTtsProvider } from '../providers/tts/index.js';
+import { getSttProvider, getDefaultSttProvider } from '../providers/stt/index.js';
 import { getContext, saveContext, getUserMemory } from './redisClient.js';
 import { createRequire } from 'module';
 
@@ -113,13 +113,20 @@ function writeMulawWavFile(mulawChunks, filename) {
 
 let fileSeq = 0;
 
-export function createFsCallHandler(ws, req, log) {
+export async function createFsCallHandler(ws, req, log) {
   const url = new URL(req.url, 'http://localhost');
   const direction    = url.searchParams.get('direction') || 'inbound';
   const voiceId      = url.searchParams.get('voiceId') || process.env.MINIMAX_VOICE_ID || 'Cantonese_GentleLady';
   const greetingText = url.searchParams.get('greetingText') || '';
   const systemPrompt = url.searchParams.get('systemPrompt') || '';
   const callerPhone  = url.searchParams.get('phone') || 'unknown';
+  const llmProviderName = url.searchParams.get('llmProvider') || process.env.LLM_PROVIDER || 'auto';
+  const ttsProviderName = url.searchParams.get('ttsProvider') || process.env.TTS_PROVIDER || 'auto';
+  const sttProviderName = url.searchParams.get('sttProvider') || process.env.STT_PROVIDER || 'auto';
+
+  const llmProv = llmProviderName === 'auto' ? await getDefaultLlmProvider() : getLlmProvider(llmProviderName);
+  const ttsProv = ttsProviderName === 'auto' ? await getDefaultTtsProvider() : getTtsProvider(ttsProviderName);
+  const sttProv = sttProviderName === 'auto' ? await getDefaultSttProvider() : getSttProvider(sttProviderName);
 
   let callSid   = `fs-${Date.now()}`;
   let fsUuid    = url.searchParams.get('uuid') || null; // passed from dialplan ${uuid}
@@ -138,7 +145,7 @@ export function createFsCallHandler(ws, req, log) {
     }
     const chunks = [];
     await new Promise((resolve) => {
-      synthesizeToStream(text, {
+      ttsProv.synthesizeToStream(text, {
         voiceId,
         onChunk(buf) { chunks.push(buf); },
         onDone() { resolve(); },
@@ -186,7 +193,7 @@ export function createFsCallHandler(ws, req, log) {
 
   function startListening() {
     state = 'LISTENING';
-    stt = createSttStream({
+    stt = sttProv.createStream({
       onInterim(text) {
         if (Date.now() - ttsLastAt < 1500) return;
         if ((state === 'SPEAKING' || state === 'THINKING') && text.length >= 2) {
@@ -237,7 +244,7 @@ export function createFsCallHandler(ws, req, log) {
     state = 'SPEAKING';
 
     const geminiDirect = process.env.USE_GEMINI_DIRECT === 'true';
-    const llmStream = geminiDirect ? streamQueryGemini(messages) : streamQueryLLM(messages, phone);
+    const llmStream = geminiDirect ? llmProv.stream(messages) : llmProv.stream(messages, phone);
 
     try {
       for await (const token of llmStream) {

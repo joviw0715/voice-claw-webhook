@@ -138,6 +138,21 @@ async function deleteProcessStart(callSid) {
 }
 
 // ─────────────────────────────────────────────
+// Provider config (global admin override)
+// ─────────────────────────────────────────────
+
+const PROVIDER_CONFIG_KEY = 'config:providers';
+
+async function getProviderConfig() {
+  const raw = await getClient().get(PROVIDER_CONFIG_KEY);
+  return raw ? JSON.parse(raw) : {};
+}
+
+async function setProviderConfig(config) {
+  await getClient().set(PROVIDER_CONFIG_KEY, JSON.stringify(config));
+}
+
+// ─────────────────────────────────────────────
 
 
 export {
@@ -155,4 +170,6 @@ export {
   setProcessStart,
   getProcessStart,
   deleteProcessStart,
+  getProviderConfig,
+  setProviderConfig,
 };

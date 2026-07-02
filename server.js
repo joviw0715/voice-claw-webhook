@@ -4,7 +4,7 @@ import { WebSocketServer } from "ws";
 import { fileURLToPath } from "url";
 import path from "path";
 import twilio from "twilio";
-import { getContext, saveContext, getUserMemory, setResult, getResult, deleteResult, setProcessStart, getProcessStart, deleteProcessStart } from "./src/services/redisClient.js";
+import { getContext, saveContext, getUserMemory, setResult, getResult, deleteResult, setProcessStart, getProcessStart, deleteProcessStart, getProviderConfig, setProviderConfig } from "./src/services/redisClient.js";
 import { queryLLM } from "./src/services/openClawLlm.js";
 import { synthesizeSpeech } from "./src/services/minimaxTts.js";
 import { retrieveKnowledge } from "./src/services/qdrantClient.js";
@@ -297,6 +297,57 @@ process.on('uncaughtException', (err) => {
 });
 process.on('unhandledRejection', (reason) => {
   console.error(`[${new Date().toISOString()}] [UNHANDLED REJECTION]`, reason);
+});
+
+// ── Admin: provider config ───────────────────────────────────────────────────
+
+const VALID_LLM = ['auto', 'ctm', 'gemini', 'groq', 'openrouter', 'openclaw'];
+const VALID_TTS = ['auto', 'ctm', 'minimax'];
+const VALID_STT = ['auto', 'ctm', 'azure'];
+
+function adminAuth(req, res, next) {
+  const token = process.env.CONSOLE_API_TOKEN || process.env.SESSION_SECRET || '';
+  const auth = req.headers['authorization'] || '';
+  if (token && auth !== `Bearer ${token}`) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+}
+
+app.use(express.json());
+
+app.get('/admin/providers', adminAuth, async (req, res) => {
+  try {
+    const config = await getProviderConfig();
+    res.json({
+      llm: config.llm || 'auto',
+      tts: config.tts || 'auto',
+      stt: config.stt || 'auto',
+      valid: { llm: VALID_LLM, tts: VALID_TTS, stt: VALID_STT },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/admin/providers', adminAuth, async (req, res) => {
+  const { llm, tts, stt } = req.body ?? {};
+  if (llm && !VALID_LLM.includes(llm)) return res.status(400).json({ error: `Invalid llm: ${llm}. Valid: ${VALID_LLM.join(', ')}` });
+  if (tts && !VALID_TTS.includes(tts)) return res.status(400).json({ error: `Invalid tts: ${tts}. Valid: ${VALID_TTS.join(', ')}` });
+  if (stt && !VALID_STT.includes(stt)) return res.status(400).json({ error: `Invalid stt: ${stt}. Valid: ${VALID_STT.join(', ')}` });
+  try {
+    const current = await getProviderConfig();
+    const updated = {
+      llm: llm ?? current.llm ?? 'auto',
+      tts: tts ?? current.tts ?? 'auto',
+      stt: stt ?? current.stt ?? 'auto',
+    };
+    await setProviderConfig(updated);
+    console.log(`[admin] providers updated:`, updated);
+    res.json({ ok: true, config: updated });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 const server = app.listen(process.env.PORT || 3000, () => {
