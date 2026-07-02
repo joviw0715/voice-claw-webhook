@@ -139,13 +139,42 @@ async function deleteProcessStart(callSid) {
 
 // ─────────────────────────────────────────────
 // Provider config (global admin override)
+// Source of truth: business console PostgreSQL (via CONSOLE_CALLBACK_URL)
+// Fast cache: Redis (config:providers, no TTL — updated on every admin save)
+// Fallback chain: Redis hit → return; Redis miss → fetch from console → re-cache → return
 // ─────────────────────────────────────────────
 
 const PROVIDER_CONFIG_KEY = 'config:providers';
 
+async function fetchProviderConfigFromConsole() {
+  const consoleUrl = (process.env.CONSOLE_CALLBACK_URL || '').replace(/\/$/, '');
+  const token = process.env.CONSOLE_API_TOKEN || process.env.SESSION_SECRET || '';
+  if (!consoleUrl) return null;
+  try {
+    const res = await import('axios').then(m => m.default.get(
+      `${consoleUrl}/api/admin/providers`,
+      { headers: token ? { Authorization: `Bearer ${token}` } : {}, timeout: 3000 },
+    ));
+    return res.data;
+  } catch (err) {
+    console.warn('[providers] failed to fetch from console:', err.message);
+    return null;
+  }
+}
+
 async function getProviderConfig() {
+  // Try Redis first (fast path)
   const raw = await getClient().get(PROVIDER_CONFIG_KEY);
-  return raw ? JSON.parse(raw) : {};
+  if (raw) return JSON.parse(raw);
+
+  // Redis miss — fetch from business console DB (source of truth)
+  const config = await fetchProviderConfigFromConsole();
+  if (config) {
+    // Re-populate Redis cache
+    await getClient().set(PROVIDER_CONFIG_KEY, JSON.stringify(config));
+    console.log('[providers] rehydrated Redis from console DB:', config);
+  }
+  return config ?? {};
 }
 
 async function setProviderConfig(config) {
