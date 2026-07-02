@@ -310,7 +310,10 @@ export function createCallHandler(ws, log) {
         }
       },
       onFinal(text) {
-        if (stt !== thisStt) return; // superseded
+        if (stt !== thisStt) {
+          log(callSid, '🔇 STT SUPERSEDED', `dropped: "${text.slice(0, 30)}"`);
+          return;
+        }
         _sttErrorCount = 0; // reset error count on successful recognition
         // Echo suppression: only suppress if TTS was playing very recently AND
         // we haven't explicitly marked it as done (ttsEndedAt).
