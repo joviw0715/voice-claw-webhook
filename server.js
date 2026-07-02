@@ -16,11 +16,23 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 app.use(express.urlencoded({ extended: false }));
+app.use(express.json());
 app.use('/audio', express.static(path.join(__dirname, 'audio')));
 
 const LANGUAGE = process.env.TWILIO_LANGUAGE || 'zh-HK';
 const BASE_URL = (process.env.BASE_URL || '').replace(/\/$/, '');
 const FIRST_MESSAGE = process.env.FIRST_MESSAGE || '你好，我係祖兒呀，請問點稱呼你呀？';
+
+// Log CTM config at startup so misconfigurations are immediately visible
+console.log('[startup] CTM config check:');
+console.log(`  CTM_LLM_BASE_URL = ${process.env.CTM_LLM_BASE_URL || '(not set)'}`);
+console.log(`  CTM_LLM_API_KEY  = ${process.env.CTM_LLM_API_KEY ? process.env.CTM_LLM_API_KEY.slice(0,8) + '...' : '(not set)'}`);
+console.log(`  CTM_LLM_MODEL    = ${process.env.CTM_LLM_MODEL || 'Qwen (default)'}`);
+console.log(`  USE_CTM_LLM      = ${process.env.USE_CTM_LLM || '(not set)'}`);
+console.log(`  CTM_TTS_URL      = ${process.env.CTM_TTS_URL || '(not set)'}`);
+console.log(`  CTM_ASR_URL      = ${process.env.CTM_ASR_URL || '(not set)'}`);
+console.log(`  CTM_ASR_ACCESS_CODE = ${process.env.CTM_ASR_ACCESS_CODE ? process.env.CTM_ASR_ACCESS_CODE.slice(0,8) + '...' : '(not set)'}`);
+
 const SYSTEM_PROMPT = process.env.SYSTEM_PROMPT || '你係一個用廣東話嘅 AI 陪伴照護員，你的名字叫祖兒。如果 User memory 有用戶名字就用佢嘅名字稱呼佢；如果唔知名字，對話開始時先有禮貌地問佢點稱呼，然後一直用佢嘅名字。你係語音通話，唔係文字，所以：絕對禁止任何 markdown、bullet point、清單、表格、時間表、數字列表、標題；唔好長篇大論；每次只講一個意思、一句話。規則：全程廣東話，語速慢，句子短，一次一條問；安撫陪伴；佢嘅問題如果你有背景資料，識答就用口語簡單答；絕對唔好糾正錯誤記憶，用重述或選項式問題；不確定或急症徵象引導搵真人幫手；End Call 前必須有禮貌地跟用戶說再見';
 
 function log(callSid, step, detail = '') {
@@ -299,7 +311,45 @@ process.on('unhandledRejection', (reason) => {
   console.error(`[${new Date().toISOString()}] [UNHANDLED REJECTION]`, reason);
 });
 
-// ── Admin: provider config ───────────────────────────────────────────────────
+// ── Diagnostic: test CTM LLM connectivity ───────────────────────────────────
+app.get('/admin/test-ctm-llm', async (req, res) => {
+  const token = process.env.CONSOLE_API_TOKEN || process.env.SESSION_SECRET || '';
+  const auth = req.headers['authorization'] || '';
+  if (token && auth !== `Bearer ${token}`) return res.status(401).json({ error: 'Unauthorized' });
+
+  const baseUrl = (process.env.CTM_LLM_BASE_URL || '').replace(/\/$/, '');
+  const apiKey = process.env.CTM_LLM_API_KEY || '';
+  const model = process.env.CTM_LLM_MODEL || 'Qwen';
+
+  if (!baseUrl) return res.json({ ok: false, error: 'CTM_LLM_BASE_URL not set' });
+  if (!apiKey) return res.json({ ok: false, error: 'CTM_LLM_API_KEY not set' });
+
+  // Validate URL format
+  try { new URL(baseUrl); } catch {
+    return res.json({ ok: false, error: `CTM_LLM_BASE_URL is not a valid URL: "${baseUrl}"` });
+  }
+
+  try {
+    const axios = (await import('axios')).default;
+    const response = await axios.post(`${baseUrl}/chat/completions`, {
+      model,
+      messages: [{ role: 'user', content: '你好' }],
+      max_tokens: 10,
+      chat_template_kwargs: { enable_thinking: false },
+    }, {
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      timeout: 10000,
+    });
+    const content = response.data.choices?.[0]?.message?.content ?? '(no content)';
+    res.json({ ok: true, model, reply: content.slice(0, 100), base_url: baseUrl });
+  } catch (err) {
+    const status = err.response?.status;
+    const detail = JSON.stringify(err.response?.data)?.slice(0, 300) ?? err.message;
+    res.json({ ok: false, status, error: detail, base_url: baseUrl, api_key_prefix: apiKey.slice(0, 8) });
+  }
+});
+
+
 
 const VALID_LLM = ['auto', 'ctm', 'gemini', 'groq', 'openrouter', 'openclaw'];
 const VALID_TTS = ['auto', 'ctm', 'minimax'];
