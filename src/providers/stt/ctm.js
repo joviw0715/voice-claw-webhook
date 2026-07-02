@@ -17,13 +17,39 @@ export function createStream({ onInterim, onFinal, onError, onSessionEnd }) {
   const FRAME_BYTES = 3200;
   let voiceId = randomUUID();
   let ws = null;
-  let pcmBuffer = Buffer.alloc(0);
+  let pcmBuffer = Buffer.alloc(0);   // accumulator for incoming audio
+  let sendQueue = [];                // frames queued while WS is still CONNECTING
   let destroyed = false;
 
+  function sendFrame(pcm16kBuf, flag) {
+    const payload = JSON.stringify({
+      voice_id: voiceId,
+      pcm: pcm16kBuf.toString('base64'),
+      flag,
+      language,
+    });
+
+    if (!ws) return;
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(payload);
+    } else if (ws.readyState === WebSocket.CONNECTING) {
+      // Buffer while connecting — flushed in ws.on('open')
+      sendQueue.push(payload);
+    }
+    // CLOSING / CLOSED: drop (reconnect will re-establish)
+  }
+
   function connect() {
+    sendQueue = [];
     ws = new WebSocket(wsUrl);
 
-    ws.on('open', () => {});
+    ws.on('open', () => {
+      // Flush any frames that arrived while we were connecting
+      for (const payload of sendQueue) {
+        ws.send(payload);
+      }
+      sendQueue = [];
+    });
 
     ws.on('message', (data) => {
       try {
@@ -37,11 +63,15 @@ export function createStream({ onInterim, onFinal, onError, onSessionEnd }) {
       }
     });
 
-    ws.on('error', (err) => onError(err));
+    ws.on('error', (err) => {
+      console.error('[ctm-stt] WebSocket error:', err.message);
+      onError(err);
+    });
 
     ws.on('close', () => {
       if (!destroyed) {
-        // Reconnect internally — do NOT call onSessionEnd or streamManager will create a duplicate stream
+        // Reconnect internally — do NOT call onSessionEnd or streamManager
+        // will create a duplicate stream on top of this reconnect
         voiceId = randomUUID();
         pcmBuffer = Buffer.alloc(0);
         setTimeout(() => { if (!destroyed) connect(); }, 500);
@@ -50,13 +80,6 @@ export function createStream({ onInterim, onFinal, onError, onSessionEnd }) {
   }
 
   connect();
-
-  function sendFrame(pcm16kBuf, flag) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    // Encode only the exact bytes of this buffer slice as base64 (Buffer IS Int8Array-compatible)
-    const b64 = pcm16kBuf.toString('base64');
-    ws.send(JSON.stringify({ voice_id: voiceId, pcm: b64, flag, language }));
-  }
 
   function upsample8kTo16k(pcm8kBuf) {
     // Nearest-neighbour: duplicate each Int16 sample [a] → [a, a]
@@ -82,15 +105,22 @@ export function createStream({ onInterim, onFinal, onError, onSessionEnd }) {
 
     close() {
       destroyed = true;
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        // Flush remaining buffer as finished frame
-        if (pcmBuffer.length > 0) {
-          sendFrame(pcmBuffer, 'finished');
-          pcmBuffer = Buffer.alloc(0);
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+        const flush = () => {
+          if (pcmBuffer.length > 0) {
+            sendFrame(pcmBuffer, 'finished');
+            pcmBuffer = Buffer.alloc(0);
+          } else {
+            ws.send(JSON.stringify({ voice_id: voiceId, pcm: '', flag: 'finished', language }));
+          }
+          setTimeout(() => ws?.close(), 100);
+        };
+        if (ws.readyState === WebSocket.OPEN) {
+          flush();
         } else {
-          ws.send(JSON.stringify({ voice_id: voiceId, pcm: '', flag: 'finished', language }));
+          // Still connecting — wait for open then flush
+          ws.once('open', flush);
         }
-        setTimeout(() => ws?.close(), 100); // let the finished frame transmit before closing
       } else {
         ws?.close();
       }
