@@ -314,18 +314,16 @@ export function createCallHandler(ws, log) {
           log(callSid, '🔇 STT SUPERSEDED', `dropped: "${text.slice(0, 30)}"`);
           return;
         }
-        _sttErrorCount = 0; // reset error count on successful recognition
-        // Echo suppression: only suppress if TTS was playing very recently AND
-        // we haven't explicitly marked it as done (ttsEndedAt).
-        // Once ttsEndedAt is set (greeting/sentence done), allow speech through.
+        _sttErrorCount = 0;
         const sinceLastChunk = Date.now() - ttsLastChunkAt;
         const sinceEnded = Date.now() - ttsEndedAt;
+        log(callSid, '👂 STT RAW', `"${text.slice(0,30)}" ttsEndedAt=${ttsEndedAt} sinceChunk=${sinceLastChunk}ms sinceEnded=${sinceEnded}ms state=${state}`);
         if (ttsEndedAt === 0 && sinceLastChunk < 1500) {
-          log(callSid, '🔇 ECHO SUPPRESSED', `"${text.slice(0, 30)}" (tts active, ${sinceLastChunk}ms ago)`);
+          log(callSid, '🔇 ECHO SUPPRESSED', `(tts active, ${sinceLastChunk}ms ago)`);
           return;
         }
         if (ttsEndedAt > 0 && sinceEnded < 800) {
-          log(callSid, '🔇 ECHO SUPPRESSED', `"${text.slice(0, 30)}" (tts just ended, ${sinceEnded}ms ago)`);
+          log(callSid, '🔇 ECHO SUPPRESSED', `(tts just ended, ${sinceEnded}ms ago)`);
           return;
         }
         log(callSid, '👂 STT', `"${text}"`);
