@@ -41,11 +41,10 @@ export function createStream({ onInterim, onFinal, onError, onSessionEnd }) {
 
     ws.on('close', () => {
       if (!destroyed) {
-        // Reconnect silently on unexpected close
+        // Reconnect internally — do NOT call onSessionEnd or streamManager will create a duplicate stream
         voiceId = randomUUID();
         pcmBuffer = Buffer.alloc(0);
         setTimeout(() => { if (!destroyed) connect(); }, 500);
-        onSessionEnd?.('reconnecting');
       }
     });
   }
@@ -54,9 +53,8 @@ export function createStream({ onInterim, onFinal, onError, onSessionEnd }) {
 
   function sendFrame(pcm16kBuf, flag) {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    // CTM ASR expects Int8Array base64
-    const int8 = new Int8Array(pcm16kBuf.buffer, pcm16kBuf.byteOffset, pcm16kBuf.byteLength);
-    const b64 = Buffer.from(int8.buffer).toString('base64');
+    // Encode only the exact bytes of this buffer slice as base64 (Buffer IS Int8Array-compatible)
+    const b64 = pcm16kBuf.toString('base64');
     ws.send(JSON.stringify({ voice_id: voiceId, pcm: b64, flag, language }));
   }
 
@@ -84,14 +82,18 @@ export function createStream({ onInterim, onFinal, onError, onSessionEnd }) {
 
     close() {
       destroyed = true;
-      if (pcmBuffer.length > 0) {
-        sendFrame(pcmBuffer, 'finished');
-        pcmBuffer = Buffer.alloc(0);
-      } else if (ws && ws.readyState === WebSocket.OPEN) {
-        // Send empty finished packet to signal end
-        ws.send(JSON.stringify({ voice_id: voiceId, pcm: '', flag: 'finished', language }));
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        // Flush remaining buffer as finished frame
+        if (pcmBuffer.length > 0) {
+          sendFrame(pcmBuffer, 'finished');
+          pcmBuffer = Buffer.alloc(0);
+        } else {
+          ws.send(JSON.stringify({ voice_id: voiceId, pcm: '', flag: 'finished', language }));
+        }
+        setTimeout(() => ws?.close(), 100); // let the finished frame transmit before closing
+      } else {
+        ws?.close();
       }
-      ws?.close();
     },
   };
 }
