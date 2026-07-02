@@ -21,6 +21,9 @@ const { Connection: EslConnection } = require('modesl');
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const AUDIO_DIR = join(__dirname, '../../audio');
+// Use the public Zeabur URL for audio, not the nginx proxy
+// FS_BASE_URL points to nginx for WebSocket, but audio must be fetched from Zeabur directly
+const AUDIO_BASE_URL = (process.env.AUDIO_BASE_URL || process.env.BASE_URL || '').replace(/\/$/, '');
 const BASE_URL = (process.env.FS_BASE_URL || process.env.BASE_URL || '').replace(/\/$/, '');
 
 console.log('[fs-stream] AUDIO_DIR:', AUDIO_DIR, 'BASE_URL:', BASE_URL);
@@ -144,10 +147,8 @@ export function createFsCallHandler(ws, req, log) {
     const filename = `fs-${callSid}-${seq}.wav`;
     try {
       await writeMulawWavFile(chunks, filename);
-      const rawUrl = `${BASE_URL}/audio/${filename}`;
-      // Use shout:// or direct http:// — mod_http_cache rejects raw .ulaw files.
-      // Instead use uuid_broadcast with the plain http_cache URL but with .wav extension
-      // by writing a proper WAV header around the mulaw data.
+      const rawUrl = `${AUDIO_BASE_URL}/audio/${filename}`;
+      // FreeSWITCH needs http_cache:// prefix to play HTTP URLs via mod_http_cache
       const fileUrl = rawUrl.startsWith('http')
         ? `http_cache://${rawUrl.replace(/^https?:\/\//, '')}`
         : rawUrl;
