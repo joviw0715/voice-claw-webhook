@@ -290,11 +290,15 @@ export function createCallHandler(ws, log) {
 
   // resetState=true on initial/normal start; false when restarting mid-turn
   // to avoid clobbering THINKING/SPEAKING state.
+  let _sttErrorCount = 0;
   function startListening(resetState = true) {
     if (resetState) state = 'LISTENING';
     const prevStt = stt;
     let thisStt;
-    const sttProvider = _sttProvider ?? getSttProvider('azure');
+    // After 3 consecutive STT errors, fall back to azure regardless of configured provider
+    const sttProvider = (_sttErrorCount >= 3)
+      ? getSttProvider('azure')
+      : (_sttProvider ?? getSttProvider('azure'));
     thisStt = sttProvider.createStream({
       onInterim(text) {
         if (stt !== thisStt) return; // superseded by a newer STT session
@@ -305,6 +309,7 @@ export function createCallHandler(ws, log) {
       },
       onFinal(text) {
         if (stt !== thisStt) return; // superseded
+        _sttErrorCount = 0; // reset error count on successful recognition
         if (Date.now() - ttsLastChunkAt < 1500 || Date.now() - ttsEndedAt < 1500) {
           log(callSid, '🔇 ECHO SUPPRESSED', `"${text.slice(0, 30)}"`);
           return;
@@ -324,7 +329,8 @@ export function createCallHandler(ws, log) {
       },
       onError(err) {
         if (stt !== thisStt) return; // superseded
-        log(callSid, '❌ STT ERROR', err.message);
+        _sttErrorCount++;
+        log(callSid, '❌ STT ERROR', `${err.message} (errors=${_sttErrorCount}${_sttErrorCount >= 3 ? ', falling back to azure' : ''})`);
         if (!llmAborted) {
           log(callSid, '🔄 STT RESTART (after error)');
           startListening(false); // preserve current state
