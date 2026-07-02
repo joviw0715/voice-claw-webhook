@@ -147,12 +147,9 @@ export function createFsCallHandler(ws, req, log) {
     const filename = `fs-${callSid}-${seq}.wav`;
     try {
       await writeMulawWavFile(chunks, filename);
-      const rawUrl = `${AUDIO_BASE_URL}/audio/${filename}`;
-      // mod_http_cache doesn't follow redirects — must use https:// directly (not http://)
-      const httpsUrl = rawUrl.replace(/^http:\/\//, 'https://');
-      const fileUrl = httpsUrl.startsWith('https')
-        ? `http_cache://${httpsUrl.replace(/^https:\/\//, '')}`
-        : httpsUrl;
+      // Use BASE_URL (nginx proxy) for audio — plain HTTP, no SSL issues with mod_http_cache
+      const rawUrl = `${BASE_URL}/audio/${filename}`;
+      const fileUrl = `http_cache://${rawUrl.replace(/^https?:\/\//, '')}`;
       log(callSid, '🔊 ESL PLAY', fileUrl);
       // Verify file exists before broadcasting
       const { statSync } = await import('fs');
