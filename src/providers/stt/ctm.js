@@ -50,11 +50,17 @@ export function createStream({ onInterim, onFinal, onError, onSessionEnd }) {
       try {
         const msg = JSON.parse(data.toString());
         const text = msg.result?.voice_text_str || '';
-        console.log(`[ctm-stt] message code=${msg.code} text="${text.slice(0, 40)}"`);
-        if (msg.code === '1' && text) onInterim?.(text);
-        else if (msg.code === '0' && text) onFinal(text);
-        else if (msg.code === '2') onSessionEnd?.('finished');
+        const code = String(msg.code); // normalise — API may return number or string
+        console.log(`[ctm-stt] message code=${code} text="${text.slice(0, 40)}"`);
+        if (code === '1' && text) onInterim?.(text);
+        else if (code === '0' && text) {
+          console.log(`[ctm-stt] calling onFinal: "${text.slice(0, 40)}"`);
+          onFinal(text);
+        }
+        else if (code === '2') onSessionEnd?.('finished');
+        else if (!text) console.log(`[ctm-stt] empty text, code=${code} — full msg: ${data.toString().slice(0, 200)}`);
       } catch (err) {
+        console.error('[ctm-stt] message parse error:', err.message, data.toString().slice(0, 200));
         onError(err);
       }
     });
