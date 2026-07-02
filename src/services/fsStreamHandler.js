@@ -55,31 +55,44 @@ function writeMulawFile(mulawChunks, filename) {
   });
 }
 
-// Write mulaw chunks as a proper WAV file (WAVE_FORMAT_MULAW, 8kHz, mono)
-// mod_http_cache requires a valid file header to identify the format.
+// Decode a single mulaw byte to 16-bit linear PCM
+function mulawToLinear(u) {
+  u = ~u & 0xFF;
+  const sign = u & 0x80;
+  const exp  = (u >> 4) & 0x07;
+  const mant = u & 0x0F;
+  let s = ((mant << 3) + 0x84) << exp;
+  s -= 0x84;
+  return sign ? -s : s;
+}
+
+// Write mulaw chunks as PCM16 WAV so FreeSWITCH mod_http_cache can play it
 function writeMulawWavFile(mulawChunks, filename) {
   return new Promise((resolve, reject) => {
     const filePath = join(AUDIO_DIR, filename);
-    const audioData = Buffer.concat(mulawChunks);
-    const dataSize = audioData.length;
-    const header = Buffer.alloc(46);
+    const mulaw = Buffer.concat(mulawChunks);
+    const pcm = Buffer.alloc(mulaw.length * 2);
+    for (let i = 0; i < mulaw.length; i++) {
+      pcm.writeInt16LE(mulawToLinear(mulaw[i]), i * 2);
+    }
+    const dataSize = pcm.length;
+    const header = Buffer.alloc(44);
     header.write('RIFF', 0);
-    header.writeUInt32LE(38 + dataSize, 4); // 38 = 4(WAVE)+4(fmt )+4(fmtSize)+18(fmt)+4(data)+4(dataSize)
+    header.writeUInt32LE(36 + dataSize, 4);
     header.write('WAVE', 8);
     header.write('fmt ', 12);
-    header.writeUInt32LE(18, 16);       // fmt chunk size = 18 (mulaw needs cbSize field)
-    header.writeUInt16LE(7, 20);        // WAVE_FORMAT_MULAW = 7
-    header.writeUInt16LE(1, 22);        // mono
-    header.writeUInt32LE(8000, 24);     // 8kHz sample rate
-    header.writeUInt32LE(8000, 28);     // byte rate = 8000
-    header.writeUInt16LE(1, 32);        // block align = 1
-    header.writeUInt16LE(8, 34);        // bits per sample = 8
-    header.writeUInt16LE(0, 36);        // cbSize = 0
-    header.write('data', 38);
-    header.writeUInt32LE(dataSize, 42);
+    header.writeUInt32LE(16, 16);        // PCM fmt chunk = 16 bytes
+    header.writeUInt16LE(1, 20);         // WAVE_FORMAT_PCM = 1
+    header.writeUInt16LE(1, 22);         // mono
+    header.writeUInt32LE(8000, 24);      // 8kHz
+    header.writeUInt32LE(16000, 28);     // byte rate = 8000 * 1 * 2
+    header.writeUInt16LE(2, 32);         // block align = 1 * 2
+    header.writeUInt16LE(16, 34);        // bits per sample = 16
+    header.write('data', 36);
+    header.writeUInt32LE(dataSize, 40);
     const ws = createWriteStream(filePath);
     ws.write(header);
-    ws.write(audioData);
+    ws.write(pcm);
     ws.end();
     ws.on('finish', () => resolve(filePath));
     ws.on('error', reject);
