@@ -55,6 +55,37 @@ function writeMulawFile(mulawChunks, filename) {
   });
 }
 
+// Write mulaw chunks as a proper WAV file (WAVE_FORMAT_MULAW, 8kHz, mono)
+// mod_http_cache requires a valid file header to identify the format.
+function writeMulawWavFile(mulawChunks, filename) {
+  return new Promise((resolve, reject) => {
+    const filePath = join(AUDIO_DIR, filename);
+    const audioData = Buffer.concat(mulawChunks);
+    const dataSize = audioData.length;
+    const header = Buffer.alloc(44);
+    header.write('RIFF', 0);
+    header.writeUInt32LE(36 + dataSize, 4);
+    header.write('WAVE', 8);
+    header.write('fmt ', 12);
+    header.writeUInt32LE(18, 16);       // fmt chunk size (18 for mulaw)
+    header.writeUInt16LE(7, 20);        // WAVE_FORMAT_MULAW = 7
+    header.writeUInt16LE(1, 22);        // mono
+    header.writeUInt32LE(8000, 24);     // 8kHz
+    header.writeUInt32LE(8000, 28);     // byte rate
+    header.writeUInt16LE(1, 32);        // block align
+    header.writeUInt16LE(8, 34);        // bits per sample
+    header.writeUInt16LE(0, 36);        // extra bytes
+    header.write('data', 38);
+    header.writeUInt32LE(dataSize, 42);
+    const ws = createWriteStream(filePath);
+    ws.write(header);
+    ws.write(audioData);
+    ws.end();
+    ws.on('finish', () => resolve(filePath));
+    ws.on('error', reject);
+  });
+}
+
 let fileSeq = 0;
 
 export function createFsCallHandler(ws, req, log) {
@@ -97,12 +128,16 @@ export function createFsCallHandler(ws, req, log) {
 
     ttsLastAt = Date.now();
     const seq = ++fileSeq;
-    const filename = `fs-${callSid}-${seq}.ulaw`;
+    const filename = `fs-${callSid}-${seq}.wav`;
     try {
-      await writeMulawFile(chunks, filename);
+      await writeMulawWavFile(chunks, filename);
       const rawUrl = `${BASE_URL}/audio/${filename}`;
-      // FreeSWITCH needs http_cache:// prefix to play HTTP URLs via mod_http_cache
-      const fileUrl = rawUrl.startsWith('http') ? `http_cache://${rawUrl.replace(/^https?:\/\//, '')}` : rawUrl;
+      // Use shout:// or direct http:// — mod_http_cache rejects raw .ulaw files.
+      // Instead use uuid_broadcast with the plain http_cache URL but with .wav extension
+      // by writing a proper WAV header around the mulaw data.
+      const fileUrl = rawUrl.startsWith('http')
+        ? `http_cache://${rawUrl.replace(/^https?:\/\//, '')}`
+        : rawUrl;
       log(callSid, '🔊 ESL PLAY', fileUrl);
       // Verify file exists before broadcasting
       const { statSync } = await import('fs');
@@ -116,7 +151,7 @@ export function createFsCallHandler(ws, req, log) {
     // Clean up temp file after 30s (enough time for playback)
     setTimeout(() => {
       unlink(join(AUDIO_DIR, filename), () => {});
-    }, 30000);
+    }, 60000);
 
     onDone?.();
   }
