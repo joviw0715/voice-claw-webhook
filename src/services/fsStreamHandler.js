@@ -33,16 +33,25 @@ async function eslBroadcast(fsUuid, fileUrl) {
   const eslHost = process.env.FS_ESL_HOST || '127.0.0.1';
   const eslPort = parseInt(process.env.FS_ESL_PORT || '8021');
   const eslPass = process.env.FS_ESL_PASSWORD || 'CHANGEME_ESL_PASS';
+  const fsAudioDir = process.env.FS_AUDIO_DIR || '/tmp';
 
   return new Promise((resolve, reject) => {
     const conn = new EslConnection(eslHost, eslPort, eslPass, () => {
-      conn.api('uuid_broadcast', `${fsUuid} ${fileUrl} aleg`, () => {
-        conn.disconnect();
-        resolve();
+      // Extract filename from URL and build local path on FreeSWITCH host
+      const fname = fileUrl.split('/').pop();
+      const localPath = `${fsAudioDir}/${fname}`;
+
+      // Step 1: download the WAV to FreeSWITCH local disk via curl
+      conn.api('system', `curl -s "${fileUrl}" -o ${localPath}`, () => {
+        // Step 2: play from local path — no mod_http_cache, no SSL, no redirect issues
+        conn.api('uuid_broadcast', `${fsUuid} ${localPath} aleg`, () => {
+          conn.disconnect();
+          resolve();
+        });
       });
     });
     conn.on('error', (err) => reject(new Error(`ESL error: ${err.message}`)));
-    setTimeout(() => reject(new Error('ESL timeout')), 5000);
+    setTimeout(() => reject(new Error('ESL timeout')), 8000);
   });
 }
 
@@ -147,9 +156,8 @@ export function createFsCallHandler(ws, req, log) {
     const filename = `fs-${callSid}-${seq}.wav`;
     try {
       await writeMulawWavFile(chunks, filename);
-      // Use BASE_URL (nginx proxy) for audio — plain HTTP, no SSL issues with mod_http_cache
-      const rawUrl = `${BASE_URL}/audio/${filename}`;
-      const fileUrl = `http_cache://${rawUrl.replace(/^https?:\/\//, '')}`;
+      // Use BASE_URL (nginx proxy on FreeSWITCH host) for audio — plain HTTP
+      const fileUrl = `${BASE_URL}/audio/${filename}`;
       log(callSid, '🔊 ESL PLAY', fileUrl);
       // Verify file exists before broadcasting
       const { statSync } = await import('fs');
