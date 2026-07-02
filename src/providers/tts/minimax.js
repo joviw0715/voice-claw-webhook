@@ -12,3 +12,4 @@ export function synthesizeToStream(text, opts) {
 export async function synthesizeSpeech(text) {
   return minimaxSynthesizeSpeech(text);
 }
+export const __name = 'minimax';

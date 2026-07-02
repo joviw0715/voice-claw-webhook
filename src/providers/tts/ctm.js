@@ -80,3 +80,4 @@ export async function synthesizeSpeech(text) {
   const baseUrl = (process.env.BASE_URL || '').replace(/\/$/, '');
   return `${baseUrl}/audio/${filename}`;
 }
+export const __name = 'ctm';

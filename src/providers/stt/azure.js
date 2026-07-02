@@ -7,3 +7,4 @@ export function isAvailable() {
 export function createStream(opts) {
   return createSttStream(opts);
 }
+export const __name = 'azure';

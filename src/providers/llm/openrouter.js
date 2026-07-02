@@ -13,3 +13,4 @@ export async function query(messages) {
   for await (const tok of streamQueryOpenRouter(messages)) result += tok;
   return result;
 }
+export const __name = 'openrouter';

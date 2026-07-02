@@ -13,3 +13,4 @@ export async function query(messages) {
   for await (const tok of streamQueryGemini(messages)) result += tok;
   return result;
 }
+export const __name = 'gemini';

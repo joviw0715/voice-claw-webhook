@@ -13,3 +13,4 @@ export async function query(messages) {
   for await (const tok of streamQueryGroq(messages)) result += tok;
   return result;
 }
+export const __name = 'groq';

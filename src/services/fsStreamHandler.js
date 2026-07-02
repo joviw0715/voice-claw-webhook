@@ -127,6 +127,7 @@ export async function createFsCallHandler(ws, req, log) {
   const llmProv = llmProviderName === 'auto' ? await getDefaultLlmProvider() : getLlmProvider(llmProviderName);
   const ttsProv = ttsProviderName === 'auto' ? await getDefaultTtsProvider() : getTtsProvider(ttsProviderName);
   const sttProv = sttProviderName === 'auto' ? await getDefaultSttProvider() : getSttProvider(sttProviderName);
+  log('fs-init', '🔌 PROVIDERS', `llm=${llmProv?.__name??'?'} tts=${ttsProv?.__name??'?'} stt=${sttProv?.__name??'?'}`);
 
   let callSid   = `fs-${Date.now()}`;
   let fsUuid    = url.searchParams.get('uuid') || null; // passed from dialplan ${uuid}

@@ -71,3 +71,4 @@ export async function query(messages) {
   );
   return response.data.choices[0].message.content;
 }
+export const __name = 'ctm';

@@ -95,3 +95,4 @@ export function createStream({ onInterim, onFinal, onError, onSessionEnd }) {
     },
   };
 }
+export const __name = 'ctm';

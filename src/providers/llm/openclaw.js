@@ -11,3 +11,4 @@ export async function* stream(messages, phone) {
 export async function query(messages, phone) {
   return queryLLM(messages, phone);
 }
+export const __name = 'openclaw';

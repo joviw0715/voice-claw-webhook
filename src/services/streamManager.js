@@ -241,8 +241,10 @@ export function createCallHandler(ws, log) {
     getDefaultLlmProvider(),
     getDefaultTtsProvider(),
     getDefaultSttProvider(),
-  ]).then(([llm, tts, stt]) => { _llmProvider = llm; _ttsProvider = tts; _sttProvider = stt; })
-    .catch(err => console.warn('[providers] resolution failed, using auto-detect:', err.message));
+  ]).then(([llm, tts, stt]) => {
+    _llmProvider = llm; _ttsProvider = tts; _sttProvider = stt;
+    console.log(`[providers] llm=${llm?.__name??'unknown'} tts=${tts?.__name??'unknown'} stt=${stt?.__name??'unknown'}`);
+  }).catch(err => console.warn('[providers] resolution failed, using auto-detect:', err.message));
 
   // ── WebSocket helpers ────────────────────────────────────────────────────
 
