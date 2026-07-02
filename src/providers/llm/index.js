@@ -30,10 +30,40 @@ export async function getDefaultLlmProvider() {
 }
 
 export async function* streamWithFallback(provider, messages, phone) {
-  try {
-    yield* provider.stream(messages, phone);
-  } catch (err) {
-    console.warn('[llm] provider failed, falling back to openclaw:', err.message);
-    yield* openclaw.stream(messages, phone);
+  // Try the configured provider first
+  if (provider !== openclaw) {
+    try {
+      let yielded = false;
+      for await (const tok of provider.stream(messages, phone)) {
+        yielded = true;
+        yield tok;
+      }
+      if (yielded) return; // success — don't fall through
+    } catch (err) {
+      console.warn(`[llm] ${provider.__name ?? 'provider'} failed (${err.message}), trying fallback`);
+    }
   }
+
+  // Fallback chain: gemini → openrouter → openclaw
+  const fallbacks = [gemini, openrouter, openclaw].filter(p => p !== provider);
+  for (const fb of fallbacks) {
+    if (!fb.isAvailable() && fb !== openclaw) continue;
+    try {
+      let yielded = false;
+      for await (const tok of fb.stream(messages, phone)) {
+        yielded = true;
+        yield tok;
+      }
+      if (yielded) {
+        console.warn(`[llm] used fallback: ${fb.__name}`);
+        return;
+      }
+    } catch (err) {
+      console.warn(`[llm] fallback ${fb.__name} also failed: ${err.message}`);
+    }
+  }
+
+  // All providers failed — yield a safe sorry message so caller hears something
+  console.error('[llm] all providers failed — yielding fallback response');
+  yield '唔好意思，系統暫時唔可用，請稍後再試。';
 }

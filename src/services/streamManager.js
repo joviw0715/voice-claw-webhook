@@ -465,7 +465,7 @@ export function createCallHandler(ws, log) {
       const useOpenRouter = !!process.env.LLM_API_KEY && !useGemini && !useGroq && (geminiDirect || intent === 'chat');
       await _providersReady;
       const activeLlm = _llmProvider ?? getLlmProvider('openclaw');
-      log(callSid, '🤖 LLM START', `${activeLlm.constructor?.name ?? 'provider'} (${Date.now() - t0}ms since user spoke)`);
+      log(callSid, '🤖 LLM START', `provider=${activeLlm.__name ?? 'unknown'} intent=${intent} (${Date.now() - t0}ms since user spoke)`);
 
       const messages = [{ role: 'system', content: systemPrompt }, ...updatedHistory];
       const llmStream = streamWithFallback(activeLlm, messages, phone);
