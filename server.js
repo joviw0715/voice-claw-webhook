@@ -313,7 +313,8 @@ process.on('unhandledRejection', (reason) => {
 
 // ── Diagnostic: test CTM LLM connectivity ───────────────────────────────────
 app.get('/admin/test-ctm-llm', async (req, res) => {
-  const token = process.env.CONSOLE_API_TOKEN || process.env.SESSION_SECRET || '';
+  // Only require auth if CONSOLE_API_TOKEN is explicitly set (not SESSION_SECRET fallback)
+  const token = process.env.CONSOLE_API_TOKEN || '';
   const auth = req.headers['authorization'] || '';
   if (token && auth !== `Bearer ${token}`) return res.status(401).json({ error: 'Unauthorized' });
 
