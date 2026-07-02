@@ -303,7 +303,8 @@ export function createCallHandler(ws, log) {
     thisStt = sttProvider.createStream({
       onInterim(text) {
         if (stt !== thisStt) return; // superseded by a newer STT session
-        if (Date.now() - ttsLastChunkAt < 1500) return; // TTS still playing — suppress echo
+        // Only suppress interim during active TTS (not after ttsEndedAt is set)
+        if (ttsEndedAt === 0 && Date.now() - ttsLastChunkAt < 1500) return;
         if ((state === 'SPEAKING' || state === 'THINKING') && text.length >= 2) {
           interrupt(`user interim: "${text.slice(0, 30)}"`);
         }
@@ -311,8 +312,17 @@ export function createCallHandler(ws, log) {
       onFinal(text) {
         if (stt !== thisStt) return; // superseded
         _sttErrorCount = 0; // reset error count on successful recognition
-        if (Date.now() - ttsLastChunkAt < 1500 || Date.now() - ttsEndedAt < 1500) {
-          log(callSid, '🔇 ECHO SUPPRESSED', `"${text.slice(0, 30)}"`);
+        // Echo suppression: only suppress if TTS was playing very recently AND
+        // we haven't explicitly marked it as done (ttsEndedAt).
+        // Once ttsEndedAt is set (greeting/sentence done), allow speech through.
+        const sinceLastChunk = Date.now() - ttsLastChunkAt;
+        const sinceEnded = Date.now() - ttsEndedAt;
+        if (ttsEndedAt === 0 && sinceLastChunk < 1500) {
+          log(callSid, '🔇 ECHO SUPPRESSED', `"${text.slice(0, 30)}" (tts active, ${sinceLastChunk}ms ago)`);
+          return;
+        }
+        if (ttsEndedAt > 0 && sinceEnded < 800) {
+          log(callSid, '🔇 ECHO SUPPRESSED', `"${text.slice(0, 30)}" (tts just ended, ${sinceEnded}ms ago)`);
           return;
         }
         log(callSid, '👂 STT', `"${text}"`);
@@ -387,6 +397,7 @@ export function createCallHandler(ws, log) {
   async function handleUserSpeech(userText) {
     state = 'THINKING';
     llmAborted = false;
+    ttsEndedAt = 0; // reset so echo suppression activates again when TTS starts
 
     // Escalation detection for inbound calls
     if (direction === 'inbound' && ESCALATION_RE.test(userText)) {
