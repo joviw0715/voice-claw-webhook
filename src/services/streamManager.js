@@ -299,6 +299,7 @@ export function createCallHandler(ws, log) {
     const sttProvider = (_sttErrorCount >= 3)
       ? getSttProvider('azure')
       : (_sttProvider ?? getSttProvider('azure'));
+    log(callSid, '👂 STT START', `provider=${sttProvider.__name ?? 'unknown'}`);
     thisStt = sttProvider.createStream({
       onInterim(text) {
         if (stt !== thisStt) return; // superseded by a newer STT session
@@ -665,6 +666,7 @@ export function createCallHandler(ws, log) {
             voiceId,
             onChunk(buf) { sendMedia(buf); },
             onDone() {
+              log(callSid, '✅ GREETING DONE', 'TTS complete — starting STT');
               // Seed greeting as assistant turn so LLM doesn't repeat the opening
               saveContext(callSid, [{ role: 'assistant', content: greetingText }]).catch(() => {});
               startListening();

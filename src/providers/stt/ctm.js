@@ -44,6 +44,7 @@ export function createStream({ onInterim, onFinal, onError, onSessionEnd }) {
     ws = new WebSocket(wsUrl);
 
     ws.on('open', () => {
+      console.log(`[ctm-stt] WebSocket OPEN — flushing ${sendQueue.length} queued frames`);
       // Flush any frames that arrived while we were connecting
       for (const payload of sendQueue) {
         ws.send(payload);
@@ -55,6 +56,7 @@ export function createStream({ onInterim, onFinal, onError, onSessionEnd }) {
       try {
         const msg = JSON.parse(data.toString());
         const text = msg.result?.voice_text_str || '';
+        console.log(`[ctm-stt] message code=${msg.code} text="${text.slice(0, 40)}"`);
         if (msg.code === '1' && text) onInterim?.(text);
         else if (msg.code === '0' && text) onFinal(text);
         else if (msg.code === '2') onSessionEnd?.('finished');
@@ -93,9 +95,12 @@ export function createStream({ onInterim, onFinal, onError, onSessionEnd }) {
     return out;
   }
 
+  let _writeCount = 0;
   return {
     write(pcm8kBuf) {
       if (destroyed) return;
+      _writeCount++;
+      if (_writeCount === 1) console.log('[ctm-stt] first audio write received');
       pcmBuffer = Buffer.concat([pcmBuffer, upsample8kTo16k(pcm8kBuf)]);
       while (pcmBuffer.length >= FRAME_BYTES) {
         sendFrame(pcmBuffer.subarray(0, FRAME_BYTES), 'real_time');
