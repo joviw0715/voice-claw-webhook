@@ -666,6 +666,7 @@ export function createCallHandler(ws, log) {
             voiceId,
             onChunk(buf) { sendMedia(buf); },
             onDone() {
+              ttsEndedAt = Date.now();
               log(callSid, '✅ GREETING DONE', 'TTS complete — starting STT');
               // Seed greeting as assistant turn so LLM doesn't repeat the opening
               saveContext(callSid, [{ role: 'assistant', content: greetingText }]).catch(() => {});
@@ -681,6 +682,7 @@ export function createCallHandler(ws, log) {
                   voiceId: fallbackVoice,
                   onChunk(buf) { sendMedia(buf); },
                   onDone() {
+                    ttsEndedAt = Date.now();
                     saveContext(callSid, [{ role: 'assistant', content: greetingText }]).catch(() => {});
                     startListening();
                   },
@@ -703,7 +705,7 @@ export function createCallHandler(ws, log) {
             (_ttsProvider ?? getTtsProvider('minimax')).synthesizeToStream(greetingText, {
               voiceId,
               onChunk(buf) { sendMedia(buf); },
-              onDone() { startListening(); },
+              onDone() { ttsEndedAt = Date.now(); startListening(); },
               onError(err) { log(callSid, '⚠ GREETING ERR', err.message); startListening(); },
             });
           }).catch(err => {
@@ -713,7 +715,7 @@ export function createCallHandler(ws, log) {
             (_ttsProvider ?? getTtsProvider('minimax')).synthesizeToStream(greetingText, {
               voiceId,
               onChunk(buf) { sendMedia(buf); },
-              onDone() { startListening(); },
+              onDone() { ttsEndedAt = Date.now(); startListening(); },
               onError(err2) { log(callSid, '⚠ GREETING ERR', err2.message); startListening(); },
             });
           });
