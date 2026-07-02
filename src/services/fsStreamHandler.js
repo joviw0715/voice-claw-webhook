@@ -148,10 +148,11 @@ export function createFsCallHandler(ws, req, log) {
     try {
       await writeMulawWavFile(chunks, filename);
       const rawUrl = `${AUDIO_BASE_URL}/audio/${filename}`;
-      // FreeSWITCH needs http_cache:// prefix to play HTTP URLs via mod_http_cache
-      const fileUrl = rawUrl.startsWith('http')
-        ? `http_cache://${rawUrl.replace(/^https?:\/\//, '')}`
-        : rawUrl;
+      // mod_http_cache doesn't follow redirects — must use https:// directly (not http://)
+      const httpsUrl = rawUrl.replace(/^http:\/\//, 'https://');
+      const fileUrl = httpsUrl.startsWith('https')
+        ? `http_cache://${httpsUrl.replace(/^https:\/\//, '')}`
+        : httpsUrl;
       log(callSid, '🔊 ESL PLAY', fileUrl);
       // Verify file exists before broadcasting
       const { statSync } = await import('fs');
