@@ -62,19 +62,19 @@ function writeMulawWavFile(mulawChunks, filename) {
     const filePath = join(AUDIO_DIR, filename);
     const audioData = Buffer.concat(mulawChunks);
     const dataSize = audioData.length;
-    const header = Buffer.alloc(44);
+    const header = Buffer.alloc(46);
     header.write('RIFF', 0);
-    header.writeUInt32LE(36 + dataSize, 4);
+    header.writeUInt32LE(38 + dataSize, 4); // 38 = 4(WAVE)+4(fmt )+4(fmtSize)+18(fmt)+4(data)+4(dataSize)
     header.write('WAVE', 8);
     header.write('fmt ', 12);
-    header.writeUInt32LE(18, 16);       // fmt chunk size (18 for mulaw)
+    header.writeUInt32LE(18, 16);       // fmt chunk size = 18 (mulaw needs cbSize field)
     header.writeUInt16LE(7, 20);        // WAVE_FORMAT_MULAW = 7
     header.writeUInt16LE(1, 22);        // mono
-    header.writeUInt32LE(8000, 24);     // 8kHz
-    header.writeUInt32LE(8000, 28);     // byte rate
-    header.writeUInt16LE(1, 32);        // block align
-    header.writeUInt16LE(8, 34);        // bits per sample
-    header.writeUInt16LE(0, 36);        // extra bytes
+    header.writeUInt32LE(8000, 24);     // 8kHz sample rate
+    header.writeUInt32LE(8000, 28);     // byte rate = 8000
+    header.writeUInt16LE(1, 32);        // block align = 1
+    header.writeUInt16LE(8, 34);        // bits per sample = 8
+    header.writeUInt16LE(0, 36);        // cbSize = 0
     header.write('data', 38);
     header.writeUInt32LE(dataSize, 42);
     const ws = createWriteStream(filePath);
