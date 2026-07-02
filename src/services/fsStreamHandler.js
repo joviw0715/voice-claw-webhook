@@ -20,7 +20,7 @@ const require = createRequire(import.meta.url);
 const { Connection: EslConnection } = require('modesl');
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const AUDIO_DIR = join(__dirname, '../audio');
+const AUDIO_DIR = join(__dirname, '../../audio');
 const BASE_URL = (process.env.FS_BASE_URL || process.env.BASE_URL || '').replace(/\/$/, '');
 
 console.log('[fs-stream] AUDIO_DIR:', AUDIO_DIR, 'BASE_URL:', BASE_URL);
