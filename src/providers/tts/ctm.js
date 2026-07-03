@@ -25,7 +25,7 @@ export function synthesizeToStream(text, { onChunk, onDone, onError, voiceId }) 
         {
           model: process.env.CTM_TTS_MODEL || 'ctm_tts',
           text,
-          voice: voiceId || process.env.CTM_TTS_VOICE || 'pakchi',
+          voice: process.env.CTM_TTS_VOICE || 'pakchi',
           stream: true,
         },
         {
