@@ -13,6 +13,23 @@ export function isAvailable() {
   return !!process.env.CTM_TTS_URL && process.env.USE_CTM_TTS === 'true';
 }
 
+// Maps the MiniMax voice IDs stored in the business console DB to CTM voice names.
+// Each mapping is individually overridable via CTM_VOICE_<KEY> env vars so no
+// code change is needed when CTM voice names change.
+const VOICE_MAP = {
+  Cantonese_GentleLady: process.env.CTM_VOICE_JAMIE   || process.env.CTM_TTS_VOICE || 'pakchi',
+  Cantonese_BrightBoy:  process.env.CTM_VOICE_KENJI   || process.env.CTM_TTS_VOICE || 'pakchi',
+  Cantonese_WarmLady:   process.env.CTM_VOICE_ANNA    || process.env.CTM_TTS_VOICE || 'pakchi',
+  // moss_audio_* are MiniMax custom clone IDs — map to CTM equivalents if available
+  'moss_audio_6b759cbc-5c17-11f1-af91-92eea1bed9bb': process.env.CTM_VOICE_MOSS      || process.env.CTM_TTS_VOICE || 'pakchi',
+  'moss_audio_eb6bf7b8-5c1b-11f1-8f84-faf87dcc54b3': process.env.CTM_VOICE_TESTVOICE || process.env.CTM_TTS_VOICE || 'pakchi',
+};
+
+function resolveCtmVoice(voiceId) {
+  if (!voiceId) return process.env.CTM_TTS_VOICE || 'pakchi';
+  return VOICE_MAP[voiceId] ?? process.env.CTM_TTS_VOICE ?? 'pakchi';
+}
+
 // Strip a WAV/RIFF header from the first chunk if present.
 // CTM may return a WAV header before the PCM data stream.
 function stripWavHeader(buf) {
@@ -33,6 +50,7 @@ export function synthesizeToStream(text, { onChunk, onDone, onError, voiceId }) 
   const ctrl = new AbortController();
   let cancelled = false;
   const inputRate = parseInt(process.env.CTM_TTS_SAMPLE_RATE || '16000', 10);
+  const ctmVoice = resolveCtmVoice(voiceId);
 
   (async () => {
     try {
@@ -42,7 +60,7 @@ export function synthesizeToStream(text, { onChunk, onDone, onError, voiceId }) 
         {
           model: process.env.CTM_TTS_MODEL || 'ctm_tts',
           text,
-          voice: process.env.CTM_TTS_VOICE || 'pakchi',
+          voice: ctmVoice,
           stream: true,
         },
         {
@@ -73,14 +91,15 @@ export function synthesizeToStream(text, { onChunk, onDone, onError, voiceId }) 
   };
 }
 
-export async function synthesizeSpeech(text) {
+export async function synthesizeSpeech(text, { voiceId } = {}) {
+  const ctmVoice = resolveCtmVoice(voiceId);
   const url = `${process.env.CTM_TTS_URL.replace(/\/$/, '')}/v1/tts`;
   const response = await axios.post(
     url,
     {
       model: process.env.CTM_TTS_MODEL || 'ctm_tts',
       text,
-      voice: process.env.CTM_TTS_VOICE || 'pakchi',
+      voice: ctmVoice,
       stream: false,
     },
     {
