@@ -24,12 +24,16 @@ export function encodeSample(s16) {
   return (~(sign | (exp << 4) | ((s16 >> (exp + 3)) & 0x0F))) & 0xFF;
 }
 
-// PCM16LE @16kHz → μ-law @8kHz via 2:1 decimation (take every other sample)
-export function encodePcm16ToMulaw8k(pcmBuf) {
-  const outLen = Math.floor(pcmBuf.length / 4);
+// PCM16LE @inputRate → μ-law @8kHz via nearest-neighbour decimation.
+// inputRate defaults to 16000; set CTM_TTS_SAMPLE_RATE env var to match the source.
+export function encodePcm16ToMulaw8k(pcmBuf, inputRate = 16000) {
+  const ratio = inputRate / 8000;
+  const inputSamples = Math.floor(pcmBuf.length / 2);
+  const outLen = Math.floor(inputSamples / ratio);
   const out = Buffer.allocUnsafe(outLen);
   for (let i = 0; i < outLen; i++) {
-    out[i] = encodeSample(pcmBuf.readInt16LE(i * 4));
+    const src = Math.round(i * ratio);
+    out[i] = encodeSample(pcmBuf.readInt16LE(src * 2));
   }
   return out;
 }
