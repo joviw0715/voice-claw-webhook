@@ -269,11 +269,8 @@ export async function createFsCallHandler(ws, req, log) {
 
     if (!llmAborted && reply) {
       try {
-        await saveContext(callSid, [
-          ...history,
-          { role: 'user', content: text },
-          { role: 'assistant', content: reply },
-        ]);
+        const newHistory = [...history, { role: 'user', content: text }, { role: 'assistant', content: reply }];
+        await saveContext(callSid, newHistory.slice(-10));
       } catch {}
     }
 
@@ -334,7 +331,7 @@ export async function createFsCallHandler(ws, req, log) {
 
     onClose(code, reason) {
       log(callSid, '📵 FS CLOSE', `code=${code} reason=${reason}`);
-      stt?.end?.();
+      stt?.close?.();
       stt = null;
     },
   };

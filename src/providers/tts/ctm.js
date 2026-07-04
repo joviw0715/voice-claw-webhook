@@ -92,6 +92,7 @@ export function synthesizeToStream(text, { onChunk, onDone, onError, voiceId }) 
 }
 
 export async function synthesizeSpeech(text, { voiceId } = {}) {
+  if (!process.env.CTM_TTS_URL) throw new Error('CTM_TTS_URL not set');
   const ctmVoice = resolveCtmVoice(voiceId);
   const url = `${process.env.CTM_TTS_URL.replace(/\/$/, '')}/v1/tts`;
   const response = await axios.post(
