@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { StringDecoder } from 'string_decoder';
+import httpsAgent from '../utils/httpAgent.js';
 
 const LLM_BASE_URL = process.env.LLM_BASE_URL || 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -30,6 +31,7 @@ async function callOpenClawHTTP(messages, key) {
       'Content-Type': 'application/json',
     },
     timeout: 40000,
+    httpsAgent,
   });
 
   return response.data.choices[0].message.content;
@@ -42,6 +44,7 @@ async function callOpenRouter(apiKey, model, messages) {
   const response = await axios.post(LLM_BASE_URL, { messages, model }, {
     headers,
     timeout: 25000,
+    httpsAgent,
   });
   return response.data.choices[0].message.content;
 }
@@ -115,6 +118,7 @@ export async function extractMemoryFacts(history) {
         'Content-Type': 'application/json',
       },
       timeout: 10000,
+      httpsAgent,
     });
 
     const content = response.data.choices[0]?.message?.content?.trim() ?? '';
@@ -148,6 +152,7 @@ export async function* streamQueryOpenRouter(messages) {
     },
     responseType: 'stream',
     timeout: 20000,
+    httpsAgent,
   });
 
   const decoder = new StringDecoder('utf8');
@@ -187,6 +192,7 @@ export async function* streamQueryGemini(messages) {
       },
       responseType: 'stream',
       timeout: 15000,
+      httpsAgent,
     },
   );
 
@@ -229,6 +235,7 @@ export async function* streamQueryGroq(messages) {
     },
     responseType: 'stream',
     timeout: 15000,
+    httpsAgent,
   });
 
   const decoder = new StringDecoder('utf8');
@@ -268,6 +275,7 @@ export async function* streamQueryLLM(messages, phone) {
     },
     responseType: 'stream',
     timeout: 40000,
+    httpsAgent,
   });
 
   // Non-streaming fallback: yield whole response as one chunk

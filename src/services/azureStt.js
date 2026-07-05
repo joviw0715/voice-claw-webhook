@@ -3,6 +3,7 @@ import axios from 'axios';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import httpsAgent from '../utils/httpAgent.js';
 
 /**
  * Validate Twilio recording URL (SSRF protection)
@@ -46,6 +47,7 @@ export async function transcribeAudio(recordingUrl) {
   const response = await axios.get(wavUrl, {
     responseType: 'arraybuffer',
     timeout: 15000,
+    httpsAgent,
     auth: {
       username: process.env.TWILIO_ACCOUNT_SID,
       password: process.env.TWILIO_AUTH_TOKEN,

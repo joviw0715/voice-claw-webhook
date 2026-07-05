@@ -1,5 +1,6 @@
 import twilio from 'twilio';
 import axios from 'axios';
+import httpsAgent from '../utils/httpAgent.js';
 import { decode as mulawDecode } from '../utils/mulaw.js';
 import { getDefaultSttProvider, getSttProvider } from '../providers/stt/index.js';
 import { getDefaultTtsProvider, getTtsProvider } from '../providers/tts/index.js';
@@ -22,6 +23,7 @@ async function fetchHotlineKnowledge(hotlineId) {
     console.log(`[knowledge] fetching hotline=${hotlineId} url=${consoleUrl} token=${token ? 'set' : 'MISSING'}`);
     const { data } = await axios.get(`${consoleUrl}/api/hotlines/${hotlineId}/knowledge`, {
       timeout: 5000,
+      httpsAgent,
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     if (!Array.isArray(data) || data.length === 0) {
@@ -208,6 +210,7 @@ export function createCallHandler(ws, log) {
         duration_sec,
       }, {
         timeout: 10000,
+        httpsAgent,
         headers: webhookSecret ? { Authorization: `Bearer ${webhookSecret}` } : {},
       });
       log(callSid, '📋 REPORT SENT', `contact=${contactId} campaign=${campaignId}`);
@@ -234,6 +237,7 @@ export function createCallHandler(ws, log) {
         after_hours: afterHours,
       }, {
         timeout: 10000,
+        httpsAgent,
         headers: webhookSecret ? { Authorization: `Bearer ${webhookSecret}` } : {},
       });
       log(callSid, '📋 INBOUND REPORT SENT', `hotline=${hotlineId}`);
@@ -423,6 +427,7 @@ export function createCallHandler(ws, log) {
         const escalateSecret = process.env.WEBHOOK_SECRET;
         axios.post(`${consoleUrl}/api/webhooks/escalate`, { call_sid: callSid }, {
           timeout: 5000,
+          httpsAgent,
           headers: escalateSecret ? { Authorization: `Bearer ${escalateSecret}` } : {},
         }).catch((err) => log(callSid, '⚠  ESCALATE ERR', err.message));
       }
@@ -588,6 +593,7 @@ export function createCallHandler(ws, log) {
               transcript: liveTranscript,
             }, {
               timeout: 3000,
+              httpsAgent,
               headers: transcriptSecret ? { Authorization: `Bearer ${transcriptSecret}` } : {},
             }).catch(() => {});
           }
@@ -678,6 +684,7 @@ export function createCallHandler(ws, log) {
               caller_phone: phone !== 'unknown' ? phone : null,
             }, {
               timeout: 5000,
+              httpsAgent,
               headers: callStartSecret ? { Authorization: `Bearer ${callStartSecret}` } : {},
             }).catch((err) =>
               log(callSid, '⚠  INBOUND START ERR', err.message),

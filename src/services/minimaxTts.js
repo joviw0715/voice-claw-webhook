@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
+import httpsAgent from '../utils/httpAgent.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -45,6 +46,7 @@ export async function synthesizeSpeech(text) {
       'Content-Type': 'application/json',
     },
     timeout: 30000,
+    httpsAgent,
   });
 
   const baseResp = response.data?.base_resp;

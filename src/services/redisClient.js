@@ -1,5 +1,6 @@
 import Redis from 'ioredis';
 import axios from 'axios';
+import httpsAgent from '../utils/httpAgent.js';
 
 let client;
 
@@ -160,7 +161,7 @@ async function fetchProviderConfigFromConsole() {
   try {
     const res = await axios.get(
       `${consoleUrl}/api/admin/providers`,
-      { headers: token ? { Authorization: `Bearer ${token}` } : {}, timeout: 3000 },
+      { headers: token ? { Authorization: `Bearer ${token}` } : {}, timeout: 3000, httpsAgent },
     );
     return res.data;
   } catch (err) {

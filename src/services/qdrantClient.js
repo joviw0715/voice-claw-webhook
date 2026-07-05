@@ -1,5 +1,6 @@
 import { QdrantClient } from '@qdrant/js-client-rest';
 import axios from 'axios';
+import httpsAgent from '../utils/httpAgent.js';
 
 const EMBEDDING_DIMENSION = parseInt(process.env.EMBEDDING_DIM || '768');
 
@@ -47,6 +48,7 @@ async function getEmbedding(text) {
           'Content-Type': 'application/json'
         },
         timeout: 10000,
+        httpsAgent,
       }
     );
     return response.data.data[0].embedding;

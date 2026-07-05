@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { encodePcm16ToMulaw8k } from '../utils/mulaw.js';
 import { mixAmbient } from '../utils/ambientMixer.js';
+import httpsAgent from '../utils/httpAgent.js';
 
 // Synthesizes text to a stream of μ-law 8kHz audio chunks (same format Twilio expects).
 // Callbacks:
@@ -49,6 +50,7 @@ export function synthesizeToStream(text, { onChunk, onDone, onError, voiceId }) 
           responseType: 'stream',
           timeout: 30000,
           signal: ctrl.signal,
+          httpsAgent,
         },
       );
 
