@@ -49,7 +49,7 @@ function stripWavHeader(buf) {
 export function synthesizeToStream(text, { onChunk, onDone, onError, voiceId }) {
   const ctrl = new AbortController();
   let cancelled = false;
-  const inputRate = parseInt(process.env.CTM_TTS_SAMPLE_RATE || '16000', 10);
+  const inputRate = parseInt(process.env.CTM_TTS_SAMPLE_RATE || '16000', 10) || 16000;
   const ctmVoice = resolveCtmVoice(voiceId);
 
   (async () => {

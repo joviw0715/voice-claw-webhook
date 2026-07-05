@@ -10,7 +10,6 @@ const PROVIDERS = { openclaw, ctm, gemini, groq, openrouter };
 export const getLlmProvider = (name) => PROVIDERS[name] ?? PROVIDERS.openclaw;
 
 function autoDetectLlm() {
-  const geminiDirect = process.env.USE_GEMINI_DIRECT === 'true';
   if (ctm.isAvailable()) return ctm;
   if (gemini.isAvailable()) return gemini;
   if (groq.isAvailable()) return groq;
@@ -32,14 +31,19 @@ export async function getDefaultLlmProvider() {
 export async function* streamWithFallback(provider, messages, phone) {
   // Try the configured provider first
   if (provider !== openclaw) {
+    let yielded = false;
     try {
-      let yielded = false;
       for await (const tok of provider.stream(messages, phone)) {
         yielded = true;
         yield tok;
       }
       if (yielded) return; // success — don't fall through
     } catch (err) {
+      if (yielded) {
+        // Partial tokens already sent to caller — appending a fallback response
+        // would produce garbled speech. Rethrow so the caller handles the broken turn.
+        throw err;
+      }
       console.warn(`[llm] ${provider.__name ?? 'provider'} failed (${err.message}), trying fallback`);
     }
   }

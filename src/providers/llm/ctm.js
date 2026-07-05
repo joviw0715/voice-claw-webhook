@@ -54,6 +54,21 @@ export async function* stream(messages) {
       } catch { /* non-JSON SSE line */ }
     }
   }
+  // Flush any multi-byte UTF-8 sequence the decoder held across the last chunk
+  buf += decoder.end();
+  if (buf.trim()) {
+    for (const line of buf.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('data:')) continue;
+      const data = trimmed.slice(5).trim();
+      if (data === '[DONE]') return;
+      try {
+        const json = JSON.parse(data);
+        const tok = json.choices?.[0]?.delta?.content;
+        if (tok) yield tok;
+      } catch { /* non-JSON SSE line */ }
+    }
+  }
 }
 
 export async function query(messages) {

@@ -467,10 +467,6 @@ export function createCallHandler(ws, log) {
       let firstToken = true;
       let firstTts = true;
 
-      const geminiDirect = process.env.USE_GEMINI_DIRECT === 'true';
-      const useGemini = !!process.env.GEMINI_API_KEY && (geminiDirect || intent === 'chat');
-      const useGroq = !!process.env.GROQ_API_KEY && !useGemini && (geminiDirect || intent === 'chat');
-      const useOpenRouter = !!process.env.LLM_API_KEY && !useGemini && !useGroq && (geminiDirect || intent === 'chat');
       await _providersReady;
       const activeLlm = _llmProvider ?? getLlmProvider('openclaw');
       log(callSid, '🤖 LLM START', `provider=${activeLlm.__name ?? 'unknown'} intent=${intent} (${Date.now() - t0}ms since user spoke)`);
@@ -480,8 +476,8 @@ export function createCallHandler(ws, log) {
 
       // For openclaw (tool queries): play an immediate Cantonese acknowledgment so the
       // user gets feedback during the long processing time instead of silence.
-      // Only play filler when defaulting to openclaw and intent is tools.
-      const isOpenClaw = !useGemini && !useGroq && !useOpenRouter && process.env.USE_CTM_LLM !== 'true';
+      // Only play filler when openclaw is actually active and intent is tools.
+      const isOpenClaw = activeLlm.__name === 'openclaw';
       if (isOpenClaw && !llmAborted && intent === 'tools') {
         let filler = '好，等我幫你查下';
         if (/天氣|落雨|氣溫|溫度|晴天/.test(userText)) filler = '等我查下天氣先';
@@ -510,7 +506,7 @@ export function createCallHandler(ws, log) {
             const sentence = cleanForTts(part);
             if (sentence.length >= 2 && !llmAborted) {
               // Only filter thinking tokens for models that produce chain-of-thought (Gemini/Groq)
-              if ((useGemini || useGroq) && isThinkingText(sentence)) {
+              if ((activeLlm.__name === 'gemini' || activeLlm.__name === 'groq') && isThinkingText(sentence)) {
                 const chinese = extractChineseSuffix(sentence);
                 if (chinese && !isThinkingText(chinese)) {
                   log(callSid, '🔕 EXTRACT FROM THINKING', `"${chinese.slice(0, 40)}"`);
@@ -538,7 +534,7 @@ export function createCallHandler(ws, log) {
 
       // Flush remainder
       const tail = cleanForTts(sentenceBuf);
-      if (tail.length >= 2 && !llmAborted && !((useGemini || useGroq) && isThinkingText(tail))) {
+      if (tail.length >= 2 && !llmAborted && !((activeLlm.__name === 'gemini' || activeLlm.__name === 'groq') && isThinkingText(tail))) {
         if (firstTts) {
           sendClear();
           state = 'SPEAKING';
@@ -571,10 +567,14 @@ export function createCallHandler(ws, log) {
             const liveTranscript = newHistory
               .map(m => `${m.role === 'user' ? 'User' : 'Agent'}: ${m.content}`)
               .join('\n');
+            const transcriptSecret = process.env.WEBHOOK_SECRET;
             axios.post(`${consoleUrl}/api/webhooks/inbound/transcript-update`, {
               call_sid: callSid,
               transcript: liveTranscript,
-            }, { timeout: 3000 }).catch(() => {});
+            }, {
+              timeout: 3000,
+              headers: transcriptSecret ? { Authorization: `Bearer ${transcriptSecret}` } : {},
+            }).catch(() => {});
           }
         }
         // Save memory after each turn while name is still unknown — the name

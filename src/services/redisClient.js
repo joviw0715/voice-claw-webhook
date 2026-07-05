@@ -152,7 +152,9 @@ const PROVIDER_CONFIG_KEY = 'config:providers';
 
 async function fetchProviderConfigFromConsole() {
   const consoleUrl = (process.env.CONSOLE_CALLBACK_URL || '').replace(/\/$/, '');
-  const token = process.env.CONSOLE_API_TOKEN || process.env.SESSION_SECRET || '';
+  // Use CONSOLE_API_TOKEN only — never SESSION_SECRET, which is the HMAC key for session
+  // cookies and must not be transmitted as a bearer token.
+  const token = process.env.CONSOLE_API_TOKEN || '';
   if (!consoleUrl) return null;
   try {
     const res = await import('axios').then(m => m.default.get(
