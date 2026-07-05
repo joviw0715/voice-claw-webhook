@@ -537,9 +537,10 @@ export function createCallHandler(ws, log) {
         }
       }
 
-      // Flush remainder
+      // Flush remainder — skip if it's an LLM error string (avoids double-play)
       const tail = cleanForTts(sentenceBuf);
-      if (tail.length >= 2 && !llmAborted && !((activeLlm.__name === 'gemini' || activeLlm.__name === 'groq') && isThinkingText(tail))) {
+      const tailIsError = tail.length >= 2 && isErrorResponse(tail);
+      if (tail.length >= 2 && !tailIsError && !llmAborted && !((activeLlm.__name === 'gemini' || activeLlm.__name === 'groq') && isThinkingText(tail))) {
         if (firstTts) {
           sendClear();
           state = 'SPEAKING';
@@ -685,9 +686,12 @@ export function createCallHandler(ws, log) {
           } else {
             greetingText = process.env.FIRST_MESSAGE || '你好，請問係咪方便聽電話？';
           }
+        // Await provider resolution so greeting uses the configured TTS, not the fallback
+        _providersReady.then(() => {
+          const ttsForGreeting = _ttsProvider ?? getTtsProvider('minimax');
           state = 'SPEAKING';
           log(callSid, '🔊 GREETING', `"${greetingText}" voice=${voiceId}`);
-          (_ttsProvider ?? getTtsProvider('minimax')).synthesizeToStream(greetingText, {
+          ttsForGreeting.synthesizeToStream(greetingText, {
             voiceId,
             onChunk(buf) { sendMedia(buf); },
             onDone() {
@@ -699,11 +703,11 @@ export function createCallHandler(ws, log) {
             },
             onError(err) {
               log(callSid, '⚠ GREETING ERR', `voice=${voiceId} err=${err.message}`);
-              // Retry with default voice if the selected voice was rejected
+              // Retry with default MiniMax voice (hardcoded fallback, not _ttsProvider)
               const fallbackVoice = process.env.MINIMAX_VOICE_ID || 'Cantonese_GentleLady';
               if (voiceId !== fallbackVoice) {
                 log(callSid, '🔊 GREETING RETRY', `falling back to voice=${fallbackVoice}`);
-                (_ttsProvider ?? getTtsProvider('minimax')).synthesizeToStream(greetingText, {
+                getTtsProvider('minimax').synthesizeToStream(greetingText, {
                   voiceId: fallbackVoice,
                   onChunk(buf) { sendMedia(buf); },
                   onDone() {
@@ -718,16 +722,21 @@ export function createCallHandler(ws, log) {
               }
             },
           });
+        }).catch(err => {
+          log(callSid, '⚠ GREETING PROVIDER ERR', err.message);
+          startListening();
+        });
         } else {
-          // Inbound: load user memory to personalise greeting with their name
-          getUserMemory(phone).then(memory => {
+        // Inbound: load user memory + wait for providers before greeting
+        Promise.all([getUserMemory(phone), _providersReady]).then(([memory]) => {
             const name = memory?.name;
             const greetingText = paramGreetingText || (name
               ? `你好呀${name}，我係祖兒呀，你今日點呀？`
               : (process.env.FIRST_MESSAGE || '你好，我係祖兒呀，請問點稱呼你呀？'));
+            const ttsForGreeting = _ttsProvider ?? getTtsProvider('minimax');
             state = 'SPEAKING';
             log(callSid, '🔊 GREETING', `"${greetingText}"`);
-            (_ttsProvider ?? getTtsProvider('minimax')).synthesizeToStream(greetingText, {
+            ttsForGreeting.synthesizeToStream(greetingText, {
               voiceId,
               onChunk(buf) { sendMedia(buf); },
               onDone() { ttsEndedAt = Date.now(); startListening(); },
@@ -736,8 +745,9 @@ export function createCallHandler(ws, log) {
           }).catch(err => {
             log(callSid, '⚠ GREETING MEM ERR', err.message);
             const greetingText = paramGreetingText || process.env.FIRST_MESSAGE || '你好，我係祖兒呀，請問點稱呼你呀？';
+            const ttsForGreeting = _ttsProvider ?? getTtsProvider('minimax');
             state = 'SPEAKING';
-            (_ttsProvider ?? getTtsProvider('minimax')).synthesizeToStream(greetingText, {
+            ttsForGreeting.synthesizeToStream(greetingText, {
               voiceId,
               onChunk(buf) { sendMedia(buf); },
               onDone() { ttsEndedAt = Date.now(); startListening(); },

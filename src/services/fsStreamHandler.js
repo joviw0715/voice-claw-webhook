@@ -154,9 +154,10 @@ export async function createFsCallHandler(ws, req, log) {
   let state     = 'IDLE';
   let ttsLastAt = 0;
   let llmAborted = false;
-  // Deferred ESL broadcast: if fsUuid is not yet known when playTts() runs, we
-  // stash the (chunks, resolve) here and drain it as soon as the UUID arrives.
-  let _pendingEslPlay = null;
+  let _cancelTts = null; // cancel handle for active TTS stream
+  // Deferred ESL broadcast queue: if fsUuid is not yet known when playTts() runs,
+  // stash entries here and drain all of them as soon as the UUID arrives.
+  const _pendingEslPlay = [];
 
   // If uuid was passed in query string, update callSid immediately
   if (fsUuid) callSid = `fs-${fsUuid}`;
@@ -188,12 +189,13 @@ export async function createFsCallHandler(ws, req, log) {
   async function playTts(text, { onDone, onError } = {}) {
     const chunks = [];
     await new Promise((resolve) => {
-      ttsProv.synthesizeToStream(text, {
+      const handle = ttsProv.synthesizeToStream(text, {
         voiceId,
         onChunk(buf) { chunks.push(buf); },
-        onDone() { resolve(); },
-        onError(err) { log(callSid, '⚠ TTS ERR', err.message); resolve(); },
+        onDone() { _cancelTts = null; resolve(); },
+        onError(err) { log(callSid, '⚠ TTS ERR', err.message); _cancelTts = null; resolve(); },
       });
+      _cancelTts = handle?.cancel ? () => handle.cancel() : null;
     });
 
     if (!chunks.length) {
@@ -202,9 +204,9 @@ export async function createFsCallHandler(ws, req, log) {
     }
 
     if (!fsUuid) {
-      // UUID not yet received — defer the ESL broadcast until the first meta message
+      // UUID not yet received — enqueue for later (preserves order)
       log(callSid, '⚠ NO UUID YET — deferring ESL play');
-      _pendingEslPlay = { chunks, onDone };
+      _pendingEslPlay.push({ chunks, onDone });
       return;
     }
 
@@ -349,11 +351,14 @@ export async function createFsCallHandler(ws, req, log) {
               fsUuid = meta.uuid;
               callSid = `fs-${meta.uuid}`;
               log(callSid, '📋 FS META', `uuid=${meta.uuid}`);
-              // Drain any greeting TTS that was synthesized before UUID arrived
-              if (_pendingEslPlay) {
-                const { chunks, onDone } = _pendingEslPlay;
-                _pendingEslPlay = null;
-                eslPlay(chunks, onDone);
+              // Drain all deferred TTS entries in order
+              if (_pendingEslPlay.length > 0) {
+                const pending = _pendingEslPlay.splice(0);
+                (async () => {
+                  for (const { chunks, onDone } of pending) {
+                    await eslPlay(chunks, onDone);
+                  }
+                })();
               }
             }
           }
@@ -368,6 +373,8 @@ export async function createFsCallHandler(ws, req, log) {
 
     onClose(code, reason) {
       log(callSid, '📵 FS CLOSE', `code=${code} reason=${reason}`);
+      _cancelTts?.();
+      _cancelTts = null;
       stt?.close?.();
       stt = null;
     },

@@ -1,4 +1,5 @@
 import Redis from 'ioredis';
+import axios from 'axios';
 
 let client;
 
@@ -157,10 +158,10 @@ async function fetchProviderConfigFromConsole() {
   const token = process.env.CONSOLE_API_TOKEN || '';
   if (!consoleUrl) return null;
   try {
-    const res = await import('axios').then(m => m.default.get(
+    const res = await axios.get(
       `${consoleUrl}/api/admin/providers`,
       { headers: token ? { Authorization: `Bearer ${token}` } : {}, timeout: 3000 },
-    ));
+    );
     return res.data;
   } catch (err) {
     console.warn('[providers] failed to fetch from console:', err.message);
