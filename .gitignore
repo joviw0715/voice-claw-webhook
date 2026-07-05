@@ -3,3 +3,6 @@ node_modules/
 audio/*.mp3
 audio/*.wav
 *.log
+.claude/settings.local.json
+business-console-plan.docx
+generate_doc.py

@@ -14,10 +14,30 @@ import { createFsCallHandler } from "./src/services/fsStreamHandler.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// ── In-memory log ring buffer (last 500 lines) ───────────────────────────────
+const LOG_BUFFER_MAX = 500;
+const logBuffer = [];
+const _origLog = console.log.bind(console);
+const _origErr = console.error.bind(console);
+const _origWarn = console.warn.bind(console);
+
+function captureLog(level, args) {
+  const line = args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
+  logBuffer.push({ ts: new Date().toISOString(), level, line });
+  if (logBuffer.length > LOG_BUFFER_MAX) logBuffer.shift();
+}
+
+console.log  = (...a) => { captureLog('info',  a); _origLog(...a); };
+console.error = (...a) => { captureLog('error', a); _origErr(...a); };
+console.warn  = (...a) => { captureLog('warn',  a); _origWarn(...a); };
+
 const app = express();
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
 app.use('/audio', express.static(path.join(__dirname, 'audio')));
+app.use(express.static(path.join(__dirname, 'public')));
+
+app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 const LANGUAGE = process.env.TWILIO_LANGUAGE || 'zh-HK';
 const BASE_URL = (process.env.BASE_URL || '').replace(/\/$/, '');
@@ -401,9 +421,78 @@ app.post('/admin/providers', adminAuth, async (req, res) => {
   }
 });
 
-const server = app.listen(process.env.PORT || 3000, () => {
-  console.log(`[server] running on port ${process.env.PORT || 3000}`);
+// ── Admin: logs ─────────────────────────────────────────────────────────────
+app.get('/admin/logs', adminAuth, (req, res) => {
+  const since = req.query.since; // ISO timestamp — return only newer entries
+  const level = req.query.level; // filter: info | error | warn
+  let entries = logBuffer;
+  if (since) entries = entries.filter(e => e.ts > since);
+  if (level) entries = entries.filter(e => e.level === level);
+  res.json({ logs: entries });
 });
+
+// ── Admin: config (env snapshot — no secrets) ───────────────────────────────
+app.get('/admin/config', adminAuth, (req, res) => {
+  const safe = (key, mask = false) => {
+    const v = process.env[key];
+    if (!v) return null;
+    return mask ? v.slice(0, 8) + '…' : v;
+  };
+  res.json({
+    server: {
+      PORT: safe('PORT') || '3000',
+      BASE_URL: safe('BASE_URL'),
+      USE_MEDIA_STREAMS: safe('USE_MEDIA_STREAMS') || 'false',
+    },
+    twilio: {
+      TWILIO_ACCOUNT_SID: safe('TWILIO_ACCOUNT_SID', true),
+      TWILIO_FROM_NUMBER: safe('TWILIO_FROM_NUMBER'),
+      TWILIO_LANGUAGE: safe('TWILIO_LANGUAGE') || 'zh-HK',
+    },
+    llm: {
+      LLM_PROVIDER: safe('LLM_PROVIDER') || 'auto',
+      OPENCLAW_URL: safe('OPENCLAW_URL'),
+      OPENCLAW_TOKEN: safe('OPENCLAW_TOKEN', true),
+      GEMINI_MODEL: safe('GEMINI_MODEL'),
+      USE_GEMINI_DIRECT: safe('USE_GEMINI_DIRECT') || 'false',
+      LLM_MODEL: safe('LLM_MODEL'),
+      USE_CTM_LLM: safe('USE_CTM_LLM') || 'false',
+      CTM_LLM_BASE_URL: safe('CTM_LLM_BASE_URL'),
+      CTM_LLM_MODEL: safe('CTM_LLM_MODEL'),
+    },
+    tts: {
+      TTS_PROVIDER: safe('TTS_PROVIDER') || 'auto',
+      MINIMAX_MODEL: safe('MINIMAX_MODEL'),
+      MINIMAX_VOICE_ID: safe('MINIMAX_VOICE_ID'),
+      AZURE_TTS_VOICE: safe('AZURE_TTS_VOICE'),
+      USE_CTM_TTS: safe('USE_CTM_TTS') || 'false',
+      CTM_TTS_URL: safe('CTM_TTS_URL'),
+      CTM_TTS_VOICE: safe('CTM_TTS_VOICE'),
+      CTM_TTS_SAMPLE_RATE: safe('CTM_TTS_SAMPLE_RATE'),
+    },
+    stt: {
+      STT_PROVIDER: safe('STT_PROVIDER') || 'auto',
+      AZURE_SPEECH_REGION: safe('AZURE_SPEECH_REGION'),
+      AZURE_SPEECH_LANGUAGE: safe('AZURE_SPEECH_LANGUAGE'),
+      USE_CTM_STT: safe('USE_CTM_STT') || 'false',
+      CTM_ASR_URL: safe('CTM_ASR_URL'),
+      CTM_ASR_LANGUAGE: safe('CTM_ASR_LANGUAGE'),
+    },
+    storage: {
+      REDIS_CONNECTION_STRING: safe('REDIS_CONNECTION_STRING', true),
+      QDRANT_URL: safe('QDRANT_URL'),
+      QDRANT_COLLECTION: safe('QDRANT_COLLECTION'),
+    },
+  });
+});
+
+const server = app.listen(process.env.PORT || 3000, () => {
+  const addr = server.address();
+  const port = addr?.port ?? process.env.PORT ?? 3000;
+  console.log(`[server] running on port ${port}`);
+});
+
+export { server, app };
 
 // Single WebSocket server — route by path to support both Twilio (/stream) and FreeSWITCH (/stream-fs)
 const wss = new WebSocketServer({ noServer: true });
@@ -428,9 +517,17 @@ wss.on('connection', (ws) => {
   ws.on('error', (err) => console.error('[ws] error:', err.message));
 });
 
-wss_fs.on('connection', (ws, req) => {
+wss_fs.on('connection', async (ws, req) => {
   const pingTimer = setInterval(() => { if (ws.readyState === ws.OPEN) ws.ping(); }, 20000);
-  const handler = createFsCallHandler(ws, req, log);
+  let handler;
+  try {
+    handler = await createFsCallHandler(ws, req, log);
+  } catch (err) {
+    console.error('[ws-fs] handler init failed:', err.message);
+    clearInterval(pingTimer);
+    ws.close();
+    return;
+  }
   ws.on('message', (data, isBinary) => handler.onMessage(data, isBinary));
   ws.on('close', (code, reason) => { clearInterval(pingTimer); handler.onClose(code, reason?.toString() || ''); });
   ws.on('error', (err) => console.error('[ws-fs] error:', err.message));
