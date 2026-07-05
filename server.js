@@ -518,6 +518,60 @@ app.post('/admin/providers', adminAuth, async (req, res) => {
   }
 });
 
+// ── Admin: assistant config (system prompt + first message overrides) ────────
+app.get('/admin/assistant', adminAuth, async (req, res) => {
+  try {
+    const { getProviderConfig } = await import('./src/services/redisClient.js');
+    const cfg = await getProviderConfig();
+    res.json({
+      systemPrompt: cfg.systemPrompt ?? process.env.SYSTEM_PROMPT ?? SYSTEM_PROMPT,
+      firstMessage: cfg.firstMessage ?? process.env.FIRST_MESSAGE ?? FIRST_MESSAGE,
+      language:     cfg.language     ?? process.env.TWILIO_LANGUAGE ?? 'zh-HK',
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/admin/assistant', adminAuth, async (req, res) => {
+  const { systemPrompt, firstMessage, language } = req.body ?? {};
+  try {
+    const { getProviderConfig, setProviderConfig } = await import('./src/services/redisClient.js');
+    const current = await getProviderConfig();
+    const updated = {
+      ...current,
+      ...(systemPrompt !== undefined ? { systemPrompt } : {}),
+      ...(firstMessage !== undefined ? { firstMessage } : {}),
+      ...(language     !== undefined ? { language }     : {}),
+    };
+    await setProviderConfig(updated);
+    if (firstMessage !== undefined) process.env.FIRST_MESSAGE = firstMessage;
+    if (language !== undefined) process.env.TWILIO_LANGUAGE = language;
+    console.log('[admin] assistant config updated');
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Admin: composer — test LLM without a phone call ──────────────────────────
+app.post('/admin/chat', adminAuth, async (req, res) => {
+  const { messages, phone = 'test' } = req.body ?? {};
+  if (!Array.isArray(messages)) return res.status(400).json({ error: 'messages array required' });
+  try {
+    const { queryLLM } = await import('./src/services/openClawLlm.js');
+    const { getProviderConfig } = await import('./src/services/redisClient.js');
+    const cfg = await getProviderConfig();
+    const sysPrompt = cfg.systemPrompt || process.env.SYSTEM_PROMPT || SYSTEM_PROMPT;
+    const full = [{ role: 'system', content: sysPrompt }, ...messages];
+    const start = Date.now();
+    const reply = await queryLLM(full, phone);
+    res.json({ reply, ms: Date.now() - start });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Admin: logs ─────────────────────────────────────────────────────────────
 app.get('/admin/logs', adminAuth, (req, res) => {
   const since = req.query.since; // ISO timestamp — return only newer entries
