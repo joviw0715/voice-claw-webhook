@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 import path from "path";
 import { createHmac, timingSafeEqual } from "crypto";
 import twilio from "twilio";
+import twilioValidation from "./src/middleware/twilioValidation.js";
 import { getContext, saveContext, getUserMemory, setResult, getResult, deleteResult, setProcessStart, getProcessStart, deleteProcessStart, getProviderConfig, setProviderConfig } from "./src/services/redisClient.js";
 import { queryLLM } from "./src/services/openClawLlm.js";
 import { synthesizeSpeech } from "./src/services/minimaxTts.js";
@@ -98,7 +99,7 @@ app.post("/call", adminAuth, async (req, res) => {
 });
 
 // Entry: Twilio call — greet and start listening
-app.post("/voice", (req, res) => {
+app.post("/voice", twilioValidation, (req, res) => {
   const callSid = req.body?.CallSid || 'unknown';
   const direction = req.body?.Direction || '';
   // For outbound calls From=Twilio number, To=person being called — use To.
@@ -225,7 +226,7 @@ ${knowledge.join('\n')}
 }
 
 // Processing pipeline — STT only, then hand off to background + poll
-app.post("/process", async (req, res) => {
+app.post("/process", twilioValidation, async (req, res) => {
   const callSid = req.body.CallSid || 'unknown';
   const phone = req.body.From || 'unknown';
   const recordingUrl = req.body.RecordingUrl || '';
@@ -284,7 +285,7 @@ app.post("/process", async (req, res) => {
 });
 
 // Poll endpoint — Twilio calls this via POST (Redirect default) every ~3s until the audio is ready
-app.post("/poll/:callSid", async (req, res) => {
+app.post("/poll/:callSid", twilioValidation, async (req, res) => {
   const callSid = req.params.callSid;
   log(callSid, '🔄 POLL   checking result');
 
@@ -333,11 +334,7 @@ process.on('unhandledRejection', (reason) => {
 });
 
 // ── Diagnostic: test CTM LLM connectivity ───────────────────────────────────
-app.get('/admin/test-ctm-llm', async (req, res) => {
-  // Only require auth if CONSOLE_API_TOKEN is explicitly set (not SESSION_SECRET fallback)
-  const token = process.env.CONSOLE_API_TOKEN || '';
-  const auth = req.headers['authorization'] || '';
-  if (token && auth !== `Bearer ${token}`) return res.status(401).json({ error: 'Unauthorized' });
+app.get('/admin/test-ctm-llm', adminAuth, async (req, res) => {
 
   const baseUrl = (process.env.CTM_LLM_BASE_URL || '').replace(/\/$/, '');
   const apiKey = process.env.CTM_LLM_API_KEY || '';
@@ -367,7 +364,7 @@ app.get('/admin/test-ctm-llm', async (req, res) => {
   } catch (err) {
     const status = err.response?.status;
     const detail = JSON.stringify(err.response?.data)?.slice(0, 300) ?? err.message;
-    res.json({ ok: false, status, error: detail, base_url: baseUrl, api_key_prefix: apiKey.slice(0, 8) });
+    res.json({ ok: false, status, error: detail, base_url: baseUrl });
   }
 });
 
@@ -454,8 +451,6 @@ app.get('/admin/me', (req, res) => {
   const authed = verifySessionCookie(cookies['vc_session']) || auth === `Bearer ${serverToken}`;
   res.json({ authed });
 });
-
-app.use(express.json());
 
 // ── Admin: stats — parsed from log buffer ────────────────────────────────────
 app.get('/admin/stats', adminAuth, (req, res) => {
