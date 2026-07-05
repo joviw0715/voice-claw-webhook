@@ -78,7 +78,7 @@ function recordTwiml(audioUrl = null) {
 const recentCalls = new Map(); // callSid → timestamp
 
 // POST /call?to=+85212345678  — initiate an outbound call with no timeLimit
-app.post("/call", async (req, res) => {
+app.post("/call", adminAuth, async (req, res) => {
   const to = req.body?.to || req.query?.to;
   if (!to) return res.status(400).json({ error: 'missing "to" parameter' });
   const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
@@ -427,7 +427,7 @@ app.post('/admin/login', (req, res) => {
   }
   const signed = signToken(serverToken || 'dev');
   const maxAge = 60 * 60 * 24 * 30; // 30 days
-  res.setHeader('Set-Cookie', `vc_session=${signed}; HttpOnly; SameSite=Lax; Max-Age=${maxAge}; Path=/`);
+  res.setHeader('Set-Cookie', `vc_session=${signed}; HttpOnly; SameSite=Lax; Max-Age=${maxAge}; Path=/; Secure`);
   res.json({ ok: true });
 });
 
@@ -509,6 +509,7 @@ app.post('/admin/providers', adminAuth, async (req, res) => {
   try {
     const current = await getProviderConfig();
     const updated = {
+      ...current,
       llm: llm ?? current.llm ?? 'auto',
       tts: tts ?? current.tts ?? 'auto',
       stt: stt ?? current.stt ?? 'auto',

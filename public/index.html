@@ -1443,7 +1443,7 @@ async function sendComposer() {
     const r = await fetch('/admin/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: msgs.slice(0, -0), phone }),
+      body: JSON.stringify({ messages: msgs, phone }),
     });
     if (r.status === 401) { showLoginModal(); return; }
     const d = await r.json();
