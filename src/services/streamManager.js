@@ -127,6 +127,7 @@ export function createCallHandler(ws, log) {
   let hotlineId = null;
   let direction = 'outbound';
   let afterHours = false;
+  let wasEscalated = false;
   let voiceId = process.env.MINIMAX_VOICE_ID || 'Cantonese_GentleLady';
   let paramGreetingText = '';
   let paramSystemPrompt = '';
@@ -229,7 +230,7 @@ export function createCallHandler(ws, log) {
         call_sid: callSid,
         transcript,
         duration_sec,
-        escalated: false,
+        escalated: wasEscalated,
         after_hours: afterHours,
       }, {
         timeout: 10000,
@@ -415,11 +416,15 @@ export function createCallHandler(ws, log) {
 
     // Escalation detection for inbound calls
     if (direction === 'inbound' && ESCALATION_RE.test(userText)) {
+      wasEscalated = true;
       const consoleUrl = (process.env.CONSOLE_CALLBACK_URL || '').replace(/\/$/, '');
       if (consoleUrl) {
         log(callSid, '🚨 ESCALATION DETECTED', `"${userText.slice(0, 60)}"`);
-        axios.post(`${consoleUrl}/api/webhooks/escalate`, { call_sid: callSid }, { timeout: 5000 })
-          .catch((err) => log(callSid, '⚠  ESCALATE ERR', err.message));
+        const escalateSecret = process.env.WEBHOOK_SECRET;
+        axios.post(`${consoleUrl}/api/webhooks/escalate`, { call_sid: callSid }, {
+          timeout: 5000,
+          headers: escalateSecret ? { Authorization: `Bearer ${escalateSecret}` } : {},
+        }).catch((err) => log(callSid, '⚠  ESCALATE ERR', err.message));
       }
     }
     const t0 = Date.now();
@@ -427,13 +432,17 @@ export function createCallHandler(ws, log) {
 
     // Short-circuit: callback scheduling is handled server-side via Twilio — no LLM needed
     if (CALLBACK_RE.test(userText)) {
-      try {
-        await handleCallbackRequest(userText);
-      } catch (err) {
-        log(callSid, '❌ CALLBACK ERROR', err.message);
-        state = 'LISTENING';
+      if (phone === 'unknown') {
+        log(callSid, '⚠  CALLBACK SKIP', 'no phone number available — falling through to LLM');
+      } else {
+        try {
+          await handleCallbackRequest(userText);
+        } catch (err) {
+          log(callSid, '❌ CALLBACK ERROR', err.message);
+          state = 'LISTENING';
+        }
+        return;
       }
-      return;
     }
 
     // Safety net: abort the turn after 90s to prevent permanent hangs
@@ -662,11 +671,15 @@ export function createCallHandler(ws, log) {
         if (direction === 'inbound' && hotlineId) {
           const consoleUrl = (process.env.CONSOLE_CALLBACK_URL || '').replace(/\/$/, '');
           if (consoleUrl) {
+            const callStartSecret = process.env.WEBHOOK_SECRET;
             axios.post(`${consoleUrl}/api/webhooks/inbound/call-start`, {
               call_sid: callSid,
               hotline_id: parseInt(hotlineId),
               caller_phone: phone !== 'unknown' ? phone : null,
-            }, { timeout: 5000 }).catch((err) =>
+            }, {
+              timeout: 5000,
+              headers: callStartSecret ? { Authorization: `Bearer ${callStartSecret}` } : {},
+            }).catch((err) =>
               log(callSid, '⚠  INBOUND START ERR', err.message),
             );
           }
@@ -739,7 +752,11 @@ export function createCallHandler(ws, log) {
             ttsForGreeting.synthesizeToStream(greetingText, {
               voiceId,
               onChunk(buf) { sendMedia(buf); },
-              onDone() { ttsEndedAt = Date.now(); startListening(); },
+              onDone() {
+                ttsEndedAt = Date.now();
+                saveContext(callSid, [{ role: 'assistant', content: greetingText }]).catch(() => {});
+                startListening();
+              },
               onError(err) { log(callSid, '⚠ GREETING ERR', err.message); startListening(); },
             });
           }).catch(err => {
@@ -750,7 +767,11 @@ export function createCallHandler(ws, log) {
             ttsForGreeting.synthesizeToStream(greetingText, {
               voiceId,
               onChunk(buf) { sendMedia(buf); },
-              onDone() { ttsEndedAt = Date.now(); startListening(); },
+              onDone() {
+                ttsEndedAt = Date.now();
+                saveContext(callSid, [{ role: 'assistant', content: greetingText }]).catch(() => {});
+                startListening();
+              },
               onError(err2) { log(callSid, '⚠ GREETING ERR', err2.message); startListening(); },
             });
           });

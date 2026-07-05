@@ -41,6 +41,7 @@ export async function transcribeAudio(recordingUrl) {
   // Download audio from Twilio with authentication
   const response = await axios.get(wavUrl, {
     responseType: 'arraybuffer',
+    timeout: 15000,
     auth: {
       username: process.env.TWILIO_ACCOUNT_SID,
       password: process.env.TWILIO_AUTH_TOKEN,
@@ -64,14 +65,10 @@ export async function transcribeAudio(recordingUrl) {
       result = await client.speechToText.convert(
         {
           file: audioBuffer,
-          modelId: 'scribe_v1', //process.env.ELEVENLABS_STT_MODEL || 
+          modelId: 'scribe_v1', //process.env.ELEVENLABS_STT_MODEL ||
         },
         { abortSignal: controller.signal },
       );
-      // After the conversion, add:
-      console.log("Full result object:", JSON.stringify(result, null, 2));
-      console.log("Result type:", typeof result);
-      console.log("Result keys:", result ? Object.keys(result) : 'null');
     } finally {
       clearTimeout(timeoutId);
     }

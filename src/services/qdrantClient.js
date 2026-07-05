@@ -45,7 +45,8 @@ async function getEmbedding(text) {
         headers: {
           Authorization: `Bearer ${embeddingKey}`,
           'Content-Type': 'application/json'
-        }
+        },
+        timeout: 10000,
       }
     );
     return response.data.data[0].embedding;
