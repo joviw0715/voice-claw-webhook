@@ -928,6 +928,7 @@ let logs = [];
 let logFilter = 'all';
 let autoRefreshTimer = null;
 let lastLogTs = null;
+let lastLogTsCount = 0; // how many entries we've already seen at lastLogTs
 
 // ── Auth (cookie-based session) ──────────────────────────────────────────────
 // Browser sends no token — the server reads httpOnly cookie automatically.
@@ -1002,6 +1003,8 @@ function nav(el) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.getElementById('view-' + view).classList.add('active');
   document.getElementById('view-title').textContent = VIEW_TITLES[view] || view;
+  // Stop the call log poll when navigating away from the call view
+  if (view !== 'call' && callPollTimer) { clearInterval(callPollTimer); callPollTimer = null; }
   if (view === 'logs')      { loadAllLogs(); }
   if (view === 'providers') { loadProviders(); }
   if (view === 'config')    { loadConfig(); }
@@ -1080,7 +1083,10 @@ async function loadAllLogs() {
     if (!r.ok) { toast('Failed to load logs', 'err'); return; }
     const data = await r.json();
     logs = data.logs || [];
-    if (logs.length) lastLogTs = logs[logs.length - 1].ts;
+    if (logs.length) {
+      lastLogTs = logs[logs.length - 1].ts;
+      lastLogTsCount = logs.filter(l => l.ts === lastLogTs).length;
+    }
     renderLogs();
     updateStats();
   } catch (e) { toast('Failed to load logs: ' + e.message, 'err'); }
@@ -1092,12 +1098,17 @@ async function loadNewLogs() {
     const r = await fetch(`${API}/admin/logs?since=${encodeURIComponent(lastLogTs)}`, { headers: headers() });
     if (!r.ok) return;
     const data = await r.json();
-    const newOnes = data.logs || [];
+    // Server returns entries with ts >= lastLogTs; skip the ones we already have at that timestamp.
+    let newOnes = data.logs || [];
     if (newOnes.length) {
-      logs = [...logs, ...newOnes].slice(-500);
-      lastLogTs = newOnes[newOnes.length - 1].ts;
-      renderLogs();
-      updateStats();
+      newOnes = newOnes.slice(lastLogTsCount);
+      if (newOnes.length) {
+        logs = [...logs, ...newOnes].slice(-500);
+        lastLogTs = newOnes[newOnes.length - 1].ts;
+        lastLogTsCount = newOnes.filter(l => l.ts === lastLogTs).length;
+        renderLogs();
+        updateStats();
+      }
     }
   } catch {}
 }
@@ -1148,6 +1159,7 @@ function setLogFilter(el, level) {
 function clearLogs() {
   logs = [];
   lastLogTs = null;
+  lastLogTsCount = 0;
   renderLogs();
   updateStats();
   toast('Log buffer cleared (local only)');

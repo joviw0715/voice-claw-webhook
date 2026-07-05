@@ -223,14 +223,21 @@ export async function createFsCallHandler(ws, req, log) {
 
   function startListening() {
     state = 'LISTENING';
-    stt = sttProv.createStream({
+    const prevStt = stt;
+    let thisStt;
+    thisStt = sttProv.createStream({
       onInterim(text) {
+        if (stt !== thisStt) return; // superseded
         if (Date.now() - ttsLastAt < 1500) return;
         if ((state === 'SPEAKING' || state === 'THINKING') && text.length >= 2) {
           interrupt(`user interim: "${text.slice(0, 30)}"`);
         }
       },
       onFinal(text) {
+        if (stt !== thisStt) {
+          log(callSid, '🔇 STT SUPERSEDED (fs)', `dropped: "${text.slice(0, 30)}"`);
+          return;
+        }
         if (Date.now() - ttsLastAt < 1500) {
           log(callSid, '🔇 ECHO SUPPRESSED', `"${text.slice(0, 30)}"`);
           return;
@@ -241,17 +248,20 @@ export async function createFsCallHandler(ws, req, log) {
         }
       },
       onError(err) {
+        if (stt !== thisStt) return; // superseded
         log(callSid, '⚠ STT ERR', err.message);
-        stt = null;
         startListening();
       },
       onSessionEnd(reason) {
+        if (stt !== thisStt) return; // superseded — don't chain-restart
         // Azure closed the session (idle timeout, service restart) — reconnect silently
         log(callSid, '🔄 STT RECONNECT', reason);
-        stt = null;
         if (state !== 'IDLE') startListening();
       },
     });
+    stt = thisStt;
+    // Close the previous session AFTER the new one is ready to avoid a gap
+    if (prevStt) prevStt.close?.();
   }
 
   async function handleUserSpeech(text) {

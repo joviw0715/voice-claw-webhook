@@ -597,7 +597,7 @@ app.get('/admin/logs', adminAuth, (req, res) => {
   const since = req.query.since; // ISO timestamp — return only newer entries
   const level = req.query.level; // filter: info | error | warn
   let entries = logBuffer;
-  if (since) entries = entries.filter(e => e.ts > since);
+  if (since) entries = entries.filter(e => e.ts >= since);
   if (level) entries = entries.filter(e => e.level === level);
   res.json({ logs: entries });
 });
