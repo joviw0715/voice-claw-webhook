@@ -32,7 +32,8 @@ const MAX_HISTORY = 10; // prevent LLM overload
 
 async function getConversation(callSid) {
   const raw = await getClient().get(`conv:${callSid}`);
-  return raw ? JSON.parse(raw) : [];
+  if (!raw) return [];
+  try { return JSON.parse(raw); } catch { return []; }
 }
 
 async function appendConversation(callSid, message) {
@@ -80,7 +81,8 @@ const MEMORY_TTL = 60 * 60 * 24 * 30; // 30 days
 
 async function getUserMemory(phoneNumber) {
   const raw = await getClient().get(`mem:${phoneNumber}`);
-  return raw ? JSON.parse(raw) : {};
+  if (!raw) return {};
+  try { return JSON.parse(raw); } catch { return {}; }
 }
 
 async function updateUserMemory(phoneNumber, updates) {

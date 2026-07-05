@@ -3,6 +3,7 @@ import express from "express";
 import { WebSocketServer } from "ws";
 import { fileURLToPath } from "url";
 import path from "path";
+import { createHmac, timingSafeEqual } from "crypto";
 import twilio from "twilio";
 import { getContext, saveContext, getUserMemory, setResult, getResult, deleteResult, setProcessStart, getProcessStart, deleteProcessStart, getProviderConfig, setProviderConfig } from "./src/services/redisClient.js";
 import { queryLLM } from "./src/services/openClawLlm.js";
@@ -376,24 +377,26 @@ const VALID_LLM = ['auto', 'ctm', 'gemini', 'groq', 'openrouter', 'openclaw'];
 const VALID_TTS = ['auto', 'ctm', 'minimax'];
 const VALID_STT = ['auto', 'ctm', 'azure'];
 
-// Simple signed session cookie — no extra npm packages needed.
-// Cookie value: base64(token + '.' + hmac(token, secret))
+// Signed session cookie using HMAC-SHA256.
+// Cookie value: base64url(token) + '.' + hex(HMAC-SHA256(base64url(token), secret))
 function signToken(tok) {
   const secret = process.env.CONSOLE_API_TOKEN || process.env.SESSION_SECRET || 'voiceclaw';
-  let hash = 0;
-  for (let i = 0; i < secret.length; i++) { hash = ((hash << 5) - hash + secret.charCodeAt(i)) | 0; }
-  for (let i = 0; i < tok.length; i++) { hash = ((hash << 5) - hash + tok.charCodeAt(i)) | 0; }
-  return Buffer.from(`${tok}.${hash}`).toString('base64');
+  const payload = Buffer.from(tok).toString('base64url');
+  const mac = createHmac('sha256', secret).update(payload).digest('hex');
+  return `${payload}.${mac}`;
 }
 
 function verifySessionCookie(cookie) {
   if (!cookie) return false;
   try {
-    const decoded = Buffer.from(cookie, 'base64').toString('utf8');
-    const dot = decoded.lastIndexOf('.');
+    const dot = cookie.lastIndexOf('.');
     if (dot < 0) return false;
-    const tok = decoded.slice(0, dot);
-    return signToken(tok) === cookie;
+    const payload = cookie.slice(0, dot);
+    const tok = Buffer.from(payload, 'base64url').toString('utf8');
+    const expected = signToken(tok);
+    // Timing-safe comparison to prevent timing attacks
+    if (expected.length !== cookie.length) return false;
+    return timingSafeEqual(Buffer.from(expected), Buffer.from(cookie));
   } catch { return false; }
 }
 

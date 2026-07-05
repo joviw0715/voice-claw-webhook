@@ -29,6 +29,11 @@ const BASE_URL = (process.env.FS_BASE_URL || process.env.BASE_URL || '').replace
 console.log('[fs-stream] AUDIO_DIR:', AUDIO_DIR, 'BASE_URL:', BASE_URL);
 
 // ESL connection for uuid_broadcast — lazy-connect when needed
+// Validate that a UUID is a valid FreeSWITCH UUID (hex chars and hyphens only)
+function isValidUuid(uuid) {
+  return typeof uuid === 'string' && /^[0-9a-f-]{1,64}$/i.test(uuid);
+}
+
 async function eslBroadcast(fsUuid, fileUrl) {
   const eslHost = process.env.FS_ESL_HOST || '127.0.0.1';
   const eslPort = parseInt(process.env.FS_ESL_PORT || '8021');
@@ -139,6 +144,11 @@ export async function createFsCallHandler(ws, req, log) {
 
   let callSid   = `fs-${Date.now()}`;
   let fsUuid    = url.searchParams.get('uuid') || null; // passed from dialplan ${uuid}
+  // Reject malformed UUIDs to prevent shell injection via ESL curl command
+  if (fsUuid && !isValidUuid(fsUuid)) {
+    console.error(`[fs-stream] rejected invalid uuid from query: "${fsUuid}"`);
+    fsUuid = null;
+  }
   let phone     = callerPhone;
   let stt       = null;
   let state     = 'IDLE';
@@ -333,14 +343,18 @@ export async function createFsCallHandler(ws, req, log) {
         try {
           const meta = JSON.parse(data.toString());
           if (meta.uuid && !fsUuid) {
-            fsUuid = meta.uuid;
-            callSid = `fs-${meta.uuid}`;
-            log(callSid, '📋 FS META', `uuid=${meta.uuid}`);
-            // Drain any greeting TTS that was synthesized before UUID arrived
-            if (_pendingEslPlay) {
-              const { chunks, onDone } = _pendingEslPlay;
-              _pendingEslPlay = null;
-              eslPlay(chunks, onDone);
+            if (!isValidUuid(meta.uuid)) {
+              log(callSid, '⚠ FS META INVALID UUID', `rejected: "${String(meta.uuid).slice(0, 40)}"`);
+            } else {
+              fsUuid = meta.uuid;
+              callSid = `fs-${meta.uuid}`;
+              log(callSid, '📋 FS META', `uuid=${meta.uuid}`);
+              // Drain any greeting TTS that was synthesized before UUID arrived
+              if (_pendingEslPlay) {
+                const { chunks, onDone } = _pendingEslPlay;
+                _pendingEslPlay = null;
+                eslPlay(chunks, onDone);
+              }
             }
           }
         } catch {}

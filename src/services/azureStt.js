@@ -45,6 +45,7 @@ export async function transcribeAudio(recordingUrl) {
 
   const response = await axios.get(wavUrl, {
     responseType: 'arraybuffer',
+    timeout: 15000,
     auth: {
       username: process.env.TWILIO_ACCOUNT_SID,
       password: process.env.TWILIO_AUTH_TOKEN,
