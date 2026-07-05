@@ -102,8 +102,8 @@ function extractNameFromHistory(history) {
     if ((m = t.match(/我叫([阿小大老細]?[一-鿿]{1,4})/))) return m[1];
     if ((m = t.match(/我係([阿小大老細]?[一-鿿]{1,4})/))) return m[1];
     if ((m = t.match(/叫我([阿小大老細]?[一-鿿]{1,4})/))) return m[1];
-    if ((m = t.match(/我姓([一-鿿]{1,2})/))) return m[1] + '先生/小姐';
-    if ((m = t.match(/姓([一-鿿]{1,2})[嘅的]?[，,。\s]/))) return m[1] + '先生/小姐';
+    if ((m = t.match(/我姓([一-鿿]{1,2})/))) return m[1]; // gender detected from voice — no title suffix
+    if ((m = t.match(/姓([一-鿿]{1,2})[嘅的]?[，,。\s]/))) return m[1];
     if ((m = t.match(/my name is ([A-Za-z]+)/i))) return m[1];
     if ((m = t.match(/i'?m ([A-Za-z]+)/i))) return m[1];
   }
