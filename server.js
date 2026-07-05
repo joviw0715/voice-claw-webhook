@@ -141,11 +141,13 @@ app.post("/voice", twilioValidation, (req, res) => {
     const wsUrl = (BASE_URL || `https://${req.headers.host}`)
       .replace(/^https:\/\//, 'wss://')
       .replace(/^http:\/\//, 'ws://') + '/stream';
+    // Escape XML attribute special chars so a malformed phone value can't break the TwiML
+    const phoneAttr = phone.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     res.send(`
 <Response>
   <Connect>
     <Stream url="${wsUrl}">
-      <Parameter name="phone" value="${phone}" />
+      <Parameter name="phone" value="${phoneAttr}" />
     </Stream>
   </Connect>
   <Hangup/>

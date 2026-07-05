@@ -174,7 +174,10 @@ async function getProviderConfig() {
   // Try Redis first (fast path)
   const raw = await getClient().get(PROVIDER_CONFIG_KEY);
   if (raw) {
-    try { return JSON.parse(raw); } catch { /* corrupted — fall through to source of truth */ }
+    try { return JSON.parse(raw); } catch {
+      // Corrupted entry — remove it so future calls don't keep hitting the console
+      await getClient().del(PROVIDER_CONFIG_KEY).catch(() => {});
+    }
   }
 
   // Redis miss — fetch from business console DB (source of truth)

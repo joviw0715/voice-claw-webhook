@@ -1318,10 +1318,22 @@ function renderConfig(data) {
       const isMasked = typeof val === 'string' && val.endsWith('…');
       const badgeCls = isNull ? 'cb-unset' : isMasked ? 'cb-masked' : 'cb-set';
       const badgeTxt = isNull ? 'unset' : isMasked ? 'masked' : 'set';
-      row.innerHTML = `
-        <span class="config-key">${key}</span>
-        <span class="config-val${isNull ? ' null' : ''}">${isNull ? 'not configured' : val}</span>
-        <span class="config-badge ${badgeCls}">${badgeTxt}</span>`;
+
+      const keyEl = document.createElement('span');
+      keyEl.className = 'config-key';
+      keyEl.textContent = key;
+
+      const valEl = document.createElement('span');
+      valEl.className = 'config-val' + (isNull ? ' null' : '');
+      valEl.textContent = isNull ? 'not configured' : val;
+
+      const badgeEl = document.createElement('span');
+      badgeEl.className = 'config-badge ' + badgeCls;
+      badgeEl.textContent = badgeTxt;
+
+      row.appendChild(keyEl);
+      row.appendChild(valEl);
+      row.appendChild(badgeEl);
       group.appendChild(row);
     }
   }
