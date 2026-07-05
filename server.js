@@ -376,14 +376,67 @@ const VALID_LLM = ['auto', 'ctm', 'gemini', 'groq', 'openrouter', 'openclaw'];
 const VALID_TTS = ['auto', 'ctm', 'minimax'];
 const VALID_STT = ['auto', 'ctm', 'azure'];
 
-function adminAuth(req, res, next) {
-  const token = process.env.CONSOLE_API_TOKEN || process.env.SESSION_SECRET || '';
-  const auth = req.headers['authorization'] || '';
-  if (token && auth !== `Bearer ${token}`) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  next();
+// Simple signed session cookie — no extra npm packages needed.
+// Cookie value: base64(token + '.' + hmac(token, secret))
+function signToken(tok) {
+  const secret = process.env.CONSOLE_API_TOKEN || process.env.SESSION_SECRET || 'voiceclaw';
+  let hash = 0;
+  for (let i = 0; i < secret.length; i++) { hash = ((hash << 5) - hash + secret.charCodeAt(i)) | 0; }
+  for (let i = 0; i < tok.length; i++) { hash = ((hash << 5) - hash + tok.charCodeAt(i)) | 0; }
+  return Buffer.from(`${tok}.${hash}`).toString('base64');
 }
+
+function verifySessionCookie(cookie) {
+  if (!cookie) return false;
+  try {
+    const decoded = Buffer.from(cookie, 'base64').toString('utf8');
+    const dot = decoded.lastIndexOf('.');
+    if (dot < 0) return false;
+    const tok = decoded.slice(0, dot);
+    return signToken(tok) === cookie;
+  } catch { return false; }
+}
+
+function parseCookies(req) {
+  const raw = req.headers.cookie || '';
+  return Object.fromEntries(raw.split(';').map(s => s.trim().split('=').map(decodeURIComponent)));
+}
+
+function adminAuth(req, res, next) {
+  const serverToken = process.env.CONSOLE_API_TOKEN || process.env.SESSION_SECRET || '';
+  // If no token configured, allow all admin access (dev mode)
+  if (!serverToken) return next();
+  // Accept Bearer token (API clients / curl)
+  const auth = req.headers['authorization'] || '';
+  if (auth === `Bearer ${serverToken}`) return next();
+  // Accept session cookie (browser)
+  const cookies = parseCookies(req);
+  if (verifySessionCookie(cookies['vc_session'])) return next();
+  return res.status(401).json({ error: 'Unauthorized' });
+}
+
+// ── Admin: login (sets session cookie) ──────────────────────────────────────
+app.post('/admin/login', (req, res) => {
+  const serverToken = process.env.CONSOLE_API_TOKEN || process.env.SESSION_SECRET || '';
+  const { token } = req.body ?? {};
+  if (serverToken && token !== serverToken) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+  const signed = signToken(serverToken || 'dev');
+  const maxAge = 60 * 60 * 24 * 30; // 30 days
+  res.setHeader('Set-Cookie', `vc_session=${signed}; HttpOnly; SameSite=Lax; Max-Age=${maxAge}; Path=/`);
+  res.json({ ok: true });
+});
+
+// ── Admin: me (check current auth status) ───────────────────────────────────
+app.get('/admin/me', (req, res) => {
+  const serverToken = process.env.CONSOLE_API_TOKEN || process.env.SESSION_SECRET || '';
+  if (!serverToken) return res.json({ authed: true, noToken: true });
+  const cookies = parseCookies(req);
+  const auth = req.headers['authorization'] || '';
+  const authed = verifySessionCookie(cookies['vc_session']) || auth === `Bearer ${serverToken}`;
+  res.json({ authed });
+});
 
 app.use(express.json());
 

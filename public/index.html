@@ -470,7 +470,7 @@
       <div class="topbar-title" id="view-title">Overview</div>
       <div class="topbar-actions">
         <button class="btn btn-ghost" id="refresh-btn" onclick="refreshAll()">↻ Refresh</button>
-        <div id="auth-wrap"></div>
+        <span id="auth-indicator" style="font-size:12px;color:var(--fg-dim)"></span>
       </div>
     </div>
 
@@ -591,54 +591,102 @@
   </div><!-- /main -->
 </div><!-- /app -->
 
+<!-- ── Login modal ──────────────────────────────────────────────────────── -->
+<div id="login-overlay" style="
+  display:none; position:fixed; inset:0; z-index:1000;
+  background:rgba(15,23,42,.85); backdrop-filter:blur(8px);
+  align-items:center; justify-content:center;">
+  <div style="
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:var(--r); padding:36px 40px; width:340px;
+    box-shadow:0 24px 64px rgba(0,0,0,.5);">
+    <div style="font-family:var(--font-head);font-size:20px;font-weight:700;margin-bottom:6px;">
+      🦞 VoiceClaw Console
+    </div>
+    <div style="font-size:13px;color:var(--fg-muted);margin-bottom:24px;">
+      Enter your <code style="color:var(--accent2);font-family:var(--font-mono);font-size:12px;">CONSOLE_API_TOKEN</code> to continue.
+    </div>
+    <input id="login-token" type="password" placeholder="Paste API token…"
+      style="width:100%;background:var(--surface3);border:1px solid var(--border);
+             color:var(--fg);border-radius:var(--r-sm);padding:10px 14px;
+             font-family:var(--font-body);font-size:14px;outline:none;
+             margin-bottom:12px;transition:border var(--transition);"
+      onkeydown="if(event.key==='Enter')doLogin()"
+      oninput="this.style.borderColor='var(--border)'"
+    />
+    <div id="login-err" style="font-size:12px;color:var(--danger);margin-bottom:10px;display:none;"></div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;padding:10px;"
+      onclick="doLogin()">Connect</button>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
 // ── State ────────────────────────────────────────────────────────────────────
-const API = '';  // same origin
-let TOKEN = localStorage.getItem('vc_token') || '';
+const API = '';
 let logs = [];
 let logFilter = 'all';
 let autoRefreshTimer = null;
 let lastLogTs = null;
 
-// ── Auth header ──────────────────────────────────────────────────────────────
+// ── Auth (cookie-based session) ──────────────────────────────────────────────
+// Browser sends no token — the server reads httpOnly cookie automatically.
+// headers() is kept for future API-client use but sends no Authorization header.
 function headers() {
-  return TOKEN ? { 'Authorization': `Bearer ${TOKEN}`, 'Content-Type': 'application/json' }
-               : { 'Content-Type': 'application/json' };
+  return { 'Content-Type': 'application/json' };
 }
 
-function initAuthInput() {
-  const wrap = document.getElementById('auth-wrap');
-  wrap.innerHTML = `
-    <div style="display:flex;gap:6px;align-items:center;">
-      <input id="token-input" type="password" placeholder="API Token"
-        style="background:var(--surface3);border:1px solid var(--border);color:var(--fg);
-               border-radius:var(--r-sm);padding:6px 12px;font-size:13px;
-               font-family:var(--font-body);outline:none;width:160px;
-               transition:border var(--transition);"
-        value="${TOKEN}"
-        oninput="setToken(this.value)"
-        onkeydown="if(event.key==='Enter')applyToken()" />
-      <button class="btn btn-primary" style="padding:6px 14px;font-size:13px;" onclick="applyToken()">Connect</button>
-    </div>`;
-  if (TOKEN) document.getElementById('token-input').style.borderColor = 'var(--accent)';
+function showLoginModal() {
+  const overlay = document.getElementById('login-overlay');
+  overlay.style.display = 'flex';
+  setTimeout(() => document.getElementById('login-token')?.focus(), 50);
 }
 
-function setToken(v) {
-  TOKEN = v.trim();
-  const inp = document.getElementById('token-input');
-  if (inp) inp.style.borderColor = TOKEN ? 'var(--border)' : 'var(--border)';
-  if (TOKEN) localStorage.setItem('vc_token', TOKEN);
-  else localStorage.removeItem('vc_token');
+function hideLoginModal() {
+  document.getElementById('login-overlay').style.display = 'none';
 }
 
-function applyToken() {
-  const v = document.getElementById('token-input')?.value || '';
-  setToken(v);
-  const inp = document.getElementById('token-input');
-  if (inp) inp.style.borderColor = 'var(--accent)';
-  refreshAll();
+async function doLogin() {
+  const token = document.getElementById('login-token').value.trim();
+  const errEl = document.getElementById('login-err');
+  const inp   = document.getElementById('login-token');
+  errEl.style.display = 'none';
+  if (!token) { errEl.textContent = 'Token is required.'; errEl.style.display = 'block'; return; }
+  try {
+    const r = await fetch('/admin/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+      credentials: 'same-origin',
+    });
+    if (r.status === 401) {
+      inp.style.borderColor = 'var(--danger)';
+      errEl.textContent = 'Incorrect token.';
+      errEl.style.display = 'block';
+      return;
+    }
+    hideLoginModal();
+    document.getElementById('auth-indicator').textContent = '● Authenticated';
+    document.getElementById('auth-indicator').style.color = 'var(--accent)';
+    await refreshAll();
+  } catch (e) {
+    errEl.textContent = 'Network error: ' + e.message;
+    errEl.style.display = 'block';
+  }
+}
+
+async function checkAuth() {
+  try {
+    const r = await fetch('/admin/me', { credentials: 'same-origin' });
+    const d = await r.json();
+    if (d.authed) {
+      document.getElementById('auth-indicator').textContent = '● Authenticated';
+      document.getElementById('auth-indicator').style.color = 'var(--accent)';
+      return true;
+    }
+  } catch {}
+  return false;
 }
 
 // ── Navigation ───────────────────────────────────────────────────────────────
@@ -722,13 +770,7 @@ async function loadHealth() {
 async function loadAllLogs() {
   try {
     const r = await fetch(`${API}/admin/logs`, { headers: headers() });
-    if (r.status === 401) {
-      document.getElementById('log-pane').innerHTML =
-        '<div class="log-empty">Enter API token and click Connect to load logs.</div>';
-      document.getElementById('overview-log').innerHTML =
-        '<div class="log-empty">Token required.</div>';
-      return;
-    }
+    if (r.status === 401) { showLoginModal(); return; }
     if (!r.ok) { toast('Failed to load logs', 'err'); return; }
     const data = await r.json();
     logs = data.logs || [];
@@ -835,7 +877,7 @@ function updateStats() {
 async function loadProviders() {
   try {
     const r = await fetch(`${API}/admin/providers`, { headers: headers() });
-    if (r.status === 401) { document.getElementById('prov-status').textContent = '⚠ Token required'; return; }
+    if (r.status === 401) { showLoginModal(); return; }
     if (!r.ok) { toast('Auth error', 'err'); return; }
     const d = await r.json();
     fillSelect('prov-llm', d.valid?.llm || [], d.llm || 'auto');
@@ -873,11 +915,7 @@ async function saveProviders() {
 async function loadConfig() {
   try {
     const r = await fetch(`${API}/admin/config`, { headers: headers() });
-    if (r.status === 401) {
-      document.getElementById('config-group').innerHTML =
-        '<div style="color:var(--fg-dim);font-size:13px">Enter API token and click Connect.</div>';
-      return;
-    }
+    if (r.status === 401) { showLoginModal(); return; }
     if (!r.ok) { toast('Auth error', 'err'); return; }
     const d = await r.json();
     renderConfig(d);
@@ -918,9 +956,18 @@ async function refreshAll() {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 (async () => {
-  initAuthInput();
-  await refreshAll();
-  startAutoRefresh();
+  await checkServerHealth();
+  const authed = await checkAuth();
+  if (authed) {
+    await Promise.all([loadAllLogs(), loadHealth()]);
+    document.getElementById('last-refresh').textContent =
+      'Updated ' + new Date().toLocaleTimeString();
+    startAutoRefresh();
+  } else {
+    showLoginModal();
+    // Still show server health which needs no auth
+    loadHealth();
+  }
 })();
 </script>
 </body>
