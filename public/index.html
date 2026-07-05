@@ -611,17 +611,34 @@ function headers() {
 function initAuthInput() {
   const wrap = document.getElementById('auth-wrap');
   wrap.innerHTML = `
-    <input id="token-input" type="password" placeholder="API Token (optional)"
-      style="background:var(--surface3);border:1px solid var(--border);color:var(--fg);
-             border-radius:var(--r-sm);padding:6px 12px;font-size:13px;
-             font-family:var(--font-body);outline:none;width:180px;"
-      value="${TOKEN}" onchange="setToken(this.value)" />`;
+    <div style="display:flex;gap:6px;align-items:center;">
+      <input id="token-input" type="password" placeholder="API Token"
+        style="background:var(--surface3);border:1px solid var(--border);color:var(--fg);
+               border-radius:var(--r-sm);padding:6px 12px;font-size:13px;
+               font-family:var(--font-body);outline:none;width:160px;
+               transition:border var(--transition);"
+        value="${TOKEN}"
+        oninput="setToken(this.value)"
+        onkeydown="if(event.key==='Enter')applyToken()" />
+      <button class="btn btn-primary" style="padding:6px 14px;font-size:13px;" onclick="applyToken()">Connect</button>
+    </div>`;
+  if (TOKEN) document.getElementById('token-input').style.borderColor = 'var(--accent)';
 }
 
 function setToken(v) {
   TOKEN = v.trim();
+  const inp = document.getElementById('token-input');
+  if (inp) inp.style.borderColor = TOKEN ? 'var(--border)' : 'var(--border)';
   if (TOKEN) localStorage.setItem('vc_token', TOKEN);
   else localStorage.removeItem('vc_token');
+}
+
+function applyToken() {
+  const v = document.getElementById('token-input')?.value || '';
+  setToken(v);
+  const inp = document.getElementById('token-input');
+  if (inp) inp.style.borderColor = 'var(--accent)';
+  refreshAll();
 }
 
 // ── Navigation ───────────────────────────────────────────────────────────────
@@ -670,24 +687,32 @@ async function loadHealth() {
 
   const checks = await Promise.allSettled([
     fetch(`${API}/health`).then(r => ({ name: 'Webhook', ok: r.ok })),
-    fetch(`${API}/admin/providers`, { headers: headers() })
-      .then(r => ({ name: 'Redis', ok: r.ok, detail: r.ok ? 'Connected' : 'Error' })),
-    fetch(`${API}/admin/config`, { headers: headers() })
-      .then(r => r.json()).then(d => ({
+    fetch(`${API}/admin/providers`, { headers: headers() }).then(r => {
+      if (r.status === 401) return { name: 'Redis', ok: null, detail: 'Token required' };
+      return r.json().then(d => ({ name: 'Redis', ok: !d.error, detail: d.error ? 'Error' : 'Connected' }))
+               .catch(() => ({ name: 'Redis', ok: r.ok, detail: r.ok ? 'Connected' : 'Error' }));
+    }),
+    fetch(`${API}/admin/config`, { headers: headers() }).then(r => {
+      if (r.status === 401) return { name: 'Config', ok: null, detail: 'Token required' };
+      return r.json().then(d => ({
         name: 'Config',
         ok: true,
         detail: d.server?.BASE_URL ? 'URL set' : 'No BASE_URL',
-      })),
+      }));
+    }),
   ]);
 
   grid.innerHTML = '';
   checks.forEach(c => {
     const d = c.value || { name: 'Service', ok: false };
+    const isUnknown = d.ok === null;
+    const cls = isUnknown ? 'hs-unknown' : d.ok ? 'hs-ok' : 'hs-err';
+    const label = isUnknown ? '○ Unknown' : d.ok ? '● Online' : '○ Offline';
     const item = document.createElement('div');
     item.className = 'health-item';
     item.innerHTML = `
       <div class="health-name">${d.name}</div>
-      <div class="health-status ${d.ok ? 'hs-ok' : 'hs-err'}">${d.ok ? '● Online' : '○ Offline'}</div>
+      <div class="health-status ${cls}">${label}</div>
       ${d.detail ? `<div style="font-size:11px;color:var(--fg-dim)">${d.detail}</div>` : ''}`;
     grid.appendChild(item);
   });
@@ -697,7 +722,14 @@ async function loadHealth() {
 async function loadAllLogs() {
   try {
     const r = await fetch(`${API}/admin/logs`, { headers: headers() });
-    if (!r.ok) { toast('Auth required — enter API token', 'err'); return; }
+    if (r.status === 401) {
+      document.getElementById('log-pane').innerHTML =
+        '<div class="log-empty">Enter API token and click Connect to load logs.</div>';
+      document.getElementById('overview-log').innerHTML =
+        '<div class="log-empty">Token required.</div>';
+      return;
+    }
+    if (!r.ok) { toast('Failed to load logs', 'err'); return; }
     const data = await r.json();
     logs = data.logs || [];
     if (logs.length) lastLogTs = logs[logs.length - 1].ts;
@@ -803,6 +835,7 @@ function updateStats() {
 async function loadProviders() {
   try {
     const r = await fetch(`${API}/admin/providers`, { headers: headers() });
+    if (r.status === 401) { document.getElementById('prov-status').textContent = '⚠ Token required'; return; }
     if (!r.ok) { toast('Auth error', 'err'); return; }
     const d = await r.json();
     fillSelect('prov-llm', d.valid?.llm || [], d.llm || 'auto');
@@ -840,6 +873,11 @@ async function saveProviders() {
 async function loadConfig() {
   try {
     const r = await fetch(`${API}/admin/config`, { headers: headers() });
+    if (r.status === 401) {
+      document.getElementById('config-group').innerHTML =
+        '<div style="color:var(--fg-dim);font-size:13px">Enter API token and click Connect.</div>';
+      return;
+    }
     if (!r.ok) { toast('Auth error', 'err'); return; }
     const d = await r.json();
     renderConfig(d);
