@@ -393,7 +393,11 @@ export function createCallHandler(ws, log) {
     }, delayMs);
 
     state = 'SPEAKING';
-    const confirmText = `好，芬姐，${delayMin}分鐘後我打返畀你，拜拜！`;
+    let callerName;
+    try { callerName = (await getUserMemory(phone))?.name; } catch { /* ignore */ }
+    const confirmText = callerName
+      ? `好，${callerName}，${delayMin}分鐘後我打返畀你，拜拜！`
+      : `好，${delayMin}分鐘後我打返畀你，拜拜！`;
     log(callSid, '🔊 CALLBACK CONFIRM', `"${confirmText}"`);
     await speakSentence(confirmText);
     ttsEndedAt = Date.now();

@@ -402,7 +402,21 @@ function verifySessionCookie(cookie) {
 
 function parseCookies(req) {
   const raw = req.headers.cookie || '';
-  return Object.fromEntries(raw.split(';').map(s => s.trim().split('=').map(decodeURIComponent)));
+  const result = {};
+  for (const part of raw.split(';')) {
+    const eqIdx = part.indexOf('=');
+    if (eqIdx < 0) continue;
+    const key = part.slice(0, eqIdx).trim();
+    const val = part.slice(eqIdx + 1).trim();
+    if (!key) continue;
+    try {
+      result[decodeURIComponent(key)] = decodeURIComponent(val);
+    } catch {
+      // Malformed percent-encoding — skip this cookie rather than crashing
+      result[key] = val;
+    }
+  }
+  return result;
 }
 
 function adminAuth(req, res, next) {
