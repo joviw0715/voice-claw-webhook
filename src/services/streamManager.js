@@ -197,13 +197,17 @@ export function createCallHandler(ws, log) {
         .map(m => `${m.role === 'user' ? 'User' : 'Agent'}: ${m.content}`)
         .join('\n');
       const duration_sec = callStartedAt ? Math.round((Date.now() - callStartedAt) / 1000) : null;
+      const webhookSecret = process.env.WEBHOOK_SECRET;
       await axios.post(`${consoleUrl}/api/webhooks/call-complete`, {
         call_sid: callSid,
         contact_id: parseInt(contactId),
         campaign_id: parseInt(campaignId),
         transcript,
         duration_sec,
-      }, { timeout: 10000 });
+      }, {
+        timeout: 10000,
+        headers: webhookSecret ? { Authorization: `Bearer ${webhookSecret}` } : {},
+      });
       log(callSid, '📋 REPORT SENT', `contact=${contactId} campaign=${campaignId}`);
     } catch (err) {
       log(callSid, '⚠  REPORT ERR', err.message);
