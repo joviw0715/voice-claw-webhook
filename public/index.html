@@ -1111,7 +1111,7 @@ function renderLogs(target = 'log-pane') {
   if (search) filtered = filtered.filter(l => l.line.toLowerCase().includes(search));
 
   if (!filtered.length) {
-    pane.innerHTML = `<div class="log-empty">No log entries${search ? ' matching "' + search + '"' : ''}.</div>`;
+    pane.innerHTML = `<div class="log-empty">No log entries${search ? ' matching "' + escHtml(search) + '"' : ''}.</div>`;
     return;
   }
 
@@ -1121,7 +1121,7 @@ function renderLogs(target = 'log-pane') {
     row.className = 'log-line';
     const ts = l.ts.replace('T', ' ').replace('Z', '').slice(0, 19);
     const badgeCls = l.level === 'error' ? 'badge-error' : l.level === 'warn' ? 'badge-warn' : 'badge-info';
-    let text = l.line;
+    let text = escHtml(l.line);
     if (search) {
       const re = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'gi');
       text = text.replace(re, m => `<span class="hl">${m}</span>`);
