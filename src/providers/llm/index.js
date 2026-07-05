@@ -12,7 +12,7 @@ export const getLlmProvider = (name) => PROVIDERS[name] ?? PROVIDERS.openclaw;
 function autoDetectLlm() {
   const geminiDirect = process.env.USE_GEMINI_DIRECT === 'true';
   if (ctm.isAvailable()) return ctm;
-  if (gemini.isAvailable() && (geminiDirect || true)) return gemini;
+  if (gemini.isAvailable()) return gemini;
   if (groq.isAvailable()) return groq;
   if (openrouter.isAvailable()) return openrouter;
   return openclaw;

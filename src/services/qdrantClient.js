@@ -17,7 +17,7 @@ function getClient() {
     const port = parsed.port ? parseInt(parsed.port) : (isHttps ? 443 : 6333);
 
     console.log('qdrant host:', parsed.hostname, 'port:', port, 'https:', isHttps);
-    console.log('qdrant api key:', apiKey);
+    console.log('qdrant api key:', apiKey ? apiKey.slice(0, 8) + '...' : '(not set)');
 
     qdrantClient = new QdrantClient({
       host: parsed.hostname,

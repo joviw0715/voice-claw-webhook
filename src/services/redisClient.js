@@ -12,6 +12,8 @@ function getClient() {
     client = new Redis(redisUrl, {
       maxRetriesPerRequest: 3,
       lazyConnect: true,
+      // In test env, disable reconnect to prevent hanging processes
+      ...(process.env.NODE_ENV === 'test' ? { retryStrategy: () => null } : {}),
     });
 
     client.on('error', (err) => {
@@ -165,7 +167,9 @@ async function fetchProviderConfigFromConsole() {
 async function getProviderConfig() {
   // Try Redis first (fast path)
   const raw = await getClient().get(PROVIDER_CONFIG_KEY);
-  if (raw) return JSON.parse(raw);
+  if (raw) {
+    try { return JSON.parse(raw); } catch { /* corrupted — fall through to source of truth */ }
+  }
 
   // Redis miss — fetch from business console DB (source of truth)
   const config = await fetchProviderConfigFromConsole();

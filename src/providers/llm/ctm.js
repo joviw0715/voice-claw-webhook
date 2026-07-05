@@ -61,21 +61,30 @@ export async function query(messages) {
   if (!baseUrl) throw new Error('CTM_LLM_BASE_URL not set');
 
   const model = process.env.CTM_LLM_MODEL || 'Qwen';
-  const response = await axios.post(
-    `${baseUrl}/chat/completions`,
-    {
-      model,
-      messages,
-      chat_template_kwargs: { enable_thinking: false },
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${process.env.CTM_LLM_API_KEY}`,
-        'Content-Type': 'application/json',
+  let response;
+  try {
+    response = await axios.post(
+      `${baseUrl}/chat/completions`,
+      {
+        model,
+        messages,
+        chat_template_kwargs: { enable_thinking: false },
       },
-      timeout: 25000,
-    },
-  );
-  return response.data.choices[0].message.content;
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.CTM_LLM_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 25000,
+      },
+    );
+  } catch (err) {
+    const status = err.response?.status;
+    const detail = JSON.stringify(err.response?.data)?.slice(0, 200) ?? err.message;
+    throw new Error(`CTM LLM HTTP ${status ?? 'ERR'}: ${detail}`);
+  }
+  const content = response.data?.choices?.[0]?.message?.content;
+  if (!content) throw new Error('CTM LLM returned empty response');
+  return content;
 }
 export const __name = 'ctm';

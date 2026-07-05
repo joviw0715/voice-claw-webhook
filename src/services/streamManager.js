@@ -223,13 +223,17 @@ export function createCallHandler(ws, log) {
         .map(m => `${m.role === 'user' ? 'User' : 'Agent'}: ${m.content}`)
         .join('\n');
       const duration_sec = callStartedAt ? Math.round((Date.now() - callStartedAt) / 1000) : null;
+      const webhookSecret = process.env.WEBHOOK_SECRET;
       await axios.post(`${consoleUrl}/api/webhooks/inbound/call-end`, {
         call_sid: callSid,
         transcript,
         duration_sec,
         escalated: false,
         after_hours: afterHours,
-      }, { timeout: 10000 });
+      }, {
+        timeout: 10000,
+        headers: webhookSecret ? { Authorization: `Bearer ${webhookSecret}` } : {},
+      });
       log(callSid, '📋 INBOUND REPORT SENT', `hotline=${hotlineId}`);
     } catch (err) {
       log(callSid, '⚠  INBOUND REPORT ERR', err.message);

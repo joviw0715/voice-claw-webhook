@@ -6,7 +6,7 @@
 // Workaround: write TTS audio as a .ulaw file served over HTTP, then use FreeSWITCH ESL
 // uuid_broadcast to play it back directly from the host.
 
-import { createWriteStream, unlink } from 'fs';
+import { createWriteStream, unlink, statSync } from 'fs';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
@@ -36,22 +36,30 @@ async function eslBroadcast(fsUuid, fileUrl) {
   const fsAudioDir = process.env.FS_AUDIO_DIR || '/tmp';
 
   return new Promise((resolve, reject) => {
+    let settled = false;
+    function fail(err) {
+      if (settled) return;
+      settled = true;
+      try { conn.disconnect(); } catch {}
+      reject(err);
+    }
+
     const conn = new EslConnection(eslHost, eslPort, eslPass, () => {
       // Extract filename from URL and build local path on FreeSWITCH host
       const fname = fileUrl.split('/').pop();
       const localPath = `${fsAudioDir}/${fname}`;
 
       // Step 1: download the WAV to FreeSWITCH local disk via curl
-      conn.api('system', `curl -s "${fileUrl}" -o ${localPath}`, () => {
+      conn.api('system', `curl -s "${fileUrl}" -o "${localPath}"`, () => {
         // Step 2: play from local path — no mod_http_cache, no SSL, no redirect issues
-        conn.api('uuid_broadcast', `${fsUuid} ${localPath} aleg`, () => {
+        conn.api('uuid_broadcast', `${fsUuid} "${localPath}" aleg`, () => {
           conn.disconnect();
           resolve();
         });
       });
     });
-    conn.on('error', (err) => reject(new Error(`ESL error: ${err.message}`)));
-    setTimeout(() => reject(new Error('ESL timeout')), 8000);
+    conn.on('error', (err) => fail(new Error(`ESL error: ${err.message}`)));
+    setTimeout(() => fail(new Error('ESL timeout')), 8000);
   });
 }
 
@@ -136,14 +144,38 @@ export async function createFsCallHandler(ws, req, log) {
   let state     = 'IDLE';
   let ttsLastAt = 0;
   let llmAborted = false;
+  // Deferred ESL broadcast: if fsUuid is not yet known when playTts() runs, we
+  // stash the (chunks, resolve) here and drain it as soon as the UUID arrives.
+  let _pendingEslPlay = null;
 
   // If uuid was passed in query string, update callSid immediately
   if (fsUuid) callSid = `fs-${fsUuid}`;
 
-  async function playTts(text, { onDone, onError } = {}) {
-    if (!fsUuid) {
-      log(callSid, '⚠ NO UUID YET — buffering TTS');
+  async function eslPlay(chunks, onDone) {
+    ttsLastAt = Date.now();
+    const seq = ++fileSeq;
+    const filename = `fs-${callSid}-${seq}.wav`;
+    try {
+      await writeMulawWavFile(chunks, filename);
+      // Use BASE_URL (nginx proxy on FreeSWITCH host) for audio — plain HTTP
+      const fileUrl = `${BASE_URL}/audio/${filename}`;
+      log(callSid, '🔊 ESL PLAY', fileUrl);
+      const stat = statSync(join(AUDIO_DIR, filename));
+      log(callSid, '📁 FILE SIZE', `${stat.size} bytes`);
+      await eslBroadcast(fsUuid, fileUrl);
+    } catch (err) {
+      log(callSid, '⚠ ESL ERR', err.message);
     }
+
+    // Clean up temp file after 60s (enough time for playback)
+    setTimeout(() => {
+      unlink(join(AUDIO_DIR, filename), () => {});
+    }, 60000);
+
+    onDone?.();
+  }
+
+  async function playTts(text, { onDone, onError } = {}) {
     const chunks = [];
     await new Promise((resolve) => {
       ttsProv.synthesizeToStream(text, {
@@ -154,34 +186,19 @@ export async function createFsCallHandler(ws, req, log) {
       });
     });
 
-    if (!chunks.length || !fsUuid) {
+    if (!chunks.length) {
       onDone?.();
       return;
     }
 
-    ttsLastAt = Date.now();
-    const seq = ++fileSeq;
-    const filename = `fs-${callSid}-${seq}.wav`;
-    try {
-      await writeMulawWavFile(chunks, filename);
-      // Use BASE_URL (nginx proxy on FreeSWITCH host) for audio — plain HTTP
-      const fileUrl = `${BASE_URL}/audio/${filename}`;
-      log(callSid, '🔊 ESL PLAY', fileUrl);
-      // Verify file exists before broadcasting
-      const { statSync } = await import('fs');
-      const stat = statSync(join(AUDIO_DIR, filename));
-      log(callSid, '📁 FILE SIZE', `${stat.size} bytes`);
-      await eslBroadcast(fsUuid, fileUrl);
-    } catch (err) {
-      log(callSid, '⚠ ESL ERR', err.message);
+    if (!fsUuid) {
+      // UUID not yet received — defer the ESL broadcast until the first meta message
+      log(callSid, '⚠ NO UUID YET — deferring ESL play');
+      _pendingEslPlay = { chunks, onDone };
+      return;
     }
 
-    // Clean up temp file after 30s (enough time for playback)
-    setTimeout(() => {
-      unlink(join(AUDIO_DIR, filename), () => {});
-    }, 60000);
-
-    onDone?.();
+    await eslPlay(chunks, onDone);
   }
 
   function interrupt(reason) {
@@ -319,6 +336,12 @@ export async function createFsCallHandler(ws, req, log) {
             fsUuid = meta.uuid;
             callSid = `fs-${meta.uuid}`;
             log(callSid, '📋 FS META', `uuid=${meta.uuid}`);
+            // Drain any greeting TTS that was synthesized before UUID arrived
+            if (_pendingEslPlay) {
+              const { chunks, onDone } = _pendingEslPlay;
+              _pendingEslPlay = null;
+              eslPlay(chunks, onDone);
+            }
           }
         } catch {}
         return;
