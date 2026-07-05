@@ -51,6 +51,9 @@ async function getEmbedding(text) {
         httpsAgent,
       }
     );
+    if (!response.data.data?.length) {
+      throw new Error(`Embedding API returned empty data array (status ${response.status})`);
+    }
     return response.data.data[0].embedding;
   }
 

@@ -68,8 +68,8 @@ function cleanForTts(text) {
     .replace(/\*+/g, '')           // markdown bold/italic asterisks
     .replace(/#+\s*/g, '')          // markdown headers
     .replace(/[_~`]/g, '')          // other markdown
-    .replace(/^\s*[-•]\s*/u, '')    // bullet/list prefixes (- or •)
-    .replace(/^[一-鿿\w]+[：:]\s*/u, '') // LLM name prefix e.g. "祖兒："
+    .replace(/^\s*[-•]\s*/gmu, '')    // bullet/list prefixes (- or •) on every line
+    .replace(/^[一-鿿\w]+[：:]\s*/gmu, '') // LLM name prefix e.g. "祖兒：" on every line
     .trim();
 }
 
@@ -551,9 +551,10 @@ export function createCallHandler(ws, log) {
         }
       }
 
-      // Flush remainder — skip if it's an LLM error string (avoids double-play)
+      // Flush remainder — skip if it's an LLM error string (avoids double-play).
+      // Check isErrorResponse on the raw buffer BEFORE cleanForTts strips ⚠ (U+26A0).
       const tail = cleanForTts(sentenceBuf);
-      const tailIsError = tail.length >= 2 && isErrorResponse(tail);
+      const tailIsError = sentenceBuf.length >= 2 && isErrorResponse(sentenceBuf.trimStart());
       if (tail.length >= 2 && !tailIsError && !llmAborted && !((activeLlm.__name === 'gemini' || activeLlm.__name === 'groq') && isThinkingText(tail))) {
         if (firstTts) {
           sendClear();
@@ -566,8 +567,9 @@ export function createCallHandler(ws, log) {
       if (!llmAborted) {
         const cleanReply = cleanForTts(fullReply);
 
-        // OpenClaw sometimes returns an error string — don't save it or speak it
-        if (isErrorResponse(cleanReply)) {
+        // OpenClaw sometimes returns an error string — don't save it or speak it.
+        // Check isErrorResponse on fullReply BEFORE cleanForTts strips ⚠ (U+26A0).
+        if (isErrorResponse(fullReply.trimStart())) {
           log(callSid, '⚠  LLM ERROR RESPONSE', cleanReply.slice(0, 80));
           await speakSentence('唔好意思，我聽唔清楚，可以再講一次嗎？');
           state = 'LISTENING';
