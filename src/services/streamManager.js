@@ -17,7 +17,8 @@ async function fetchHotlineKnowledge(hotlineId) {
     return '';
   }
   try {
-    const token = process.env.CONSOLE_API_TOKEN || process.env.SESSION_SECRET || '';
+    // SESSION_SECRET is the HMAC key for session cookies — never transmit it as a bearer token.
+    const token = process.env.CONSOLE_API_TOKEN || '';
     console.log(`[knowledge] fetching hotline=${hotlineId} url=${consoleUrl} token=${token ? 'set' : 'MISSING'}`);
     const { data } = await axios.get(`${consoleUrl}/api/hotlines/${hotlineId}/knowledge`, {
       timeout: 5000,

@@ -420,9 +420,10 @@ function adminAuth(req, res, next) {
   const serverToken = process.env.CONSOLE_API_TOKEN || process.env.SESSION_SECRET || '';
   // If no token configured, allow all admin access (dev mode)
   if (!serverToken) return next();
-  // Accept Bearer token (API clients / curl)
+  // Accept Bearer token (API clients / curl) — timing-safe comparison
   const auth = req.headers['authorization'] || '';
-  if (auth === `Bearer ${serverToken}`) return next();
+  const expected = `Bearer ${serverToken}`;
+  if (auth.length === expected.length && timingSafeEqual(Buffer.from(auth), Buffer.from(expected))) return next();
   // Accept session cookie (browser)
   const cookies = parseCookies(req);
   if (verifySessionCookie(cookies['vc_session'])) return next();
@@ -433,7 +434,9 @@ function adminAuth(req, res, next) {
 app.post('/admin/login', (req, res) => {
   const serverToken = process.env.CONSOLE_API_TOKEN || process.env.SESSION_SECRET || '';
   const { token } = req.body ?? {};
-  if (serverToken && token !== serverToken) {
+  const supplied = Buffer.from(token ?? '');
+  const expected = Buffer.from(serverToken);
+  if (serverToken && !(supplied.length === expected.length && timingSafeEqual(supplied, expected))) {
     return res.status(401).json({ error: 'Invalid token' });
   }
   const signed = signToken(serverToken || 'dev');
@@ -448,7 +451,9 @@ app.get('/admin/me', (req, res) => {
   if (!serverToken) return res.json({ authed: true, noToken: true });
   const cookies = parseCookies(req);
   const auth = req.headers['authorization'] || '';
-  const authed = verifySessionCookie(cookies['vc_session']) || auth === `Bearer ${serverToken}`;
+  const expectedBearer = `Bearer ${serverToken}`;
+  const bearerMatch = auth.length === expectedBearer.length && timingSafeEqual(Buffer.from(auth), Buffer.from(expectedBearer));
+  const authed = verifySessionCookie(cookies['vc_session']) || bearerMatch;
   res.json({ authed });
 });
 
