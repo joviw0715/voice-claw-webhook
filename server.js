@@ -440,6 +440,50 @@ app.get('/admin/me', (req, res) => {
 
 app.use(express.json());
 
+// ── Admin: stats — parsed from log buffer ────────────────────────────────────
+app.get('/admin/stats', adminAuth, (req, res) => {
+  const parseMs = str => { const m = str.match(/\((\d+)ms\)/); return m ? parseInt(m[1]) : null; };
+  const parseTotalMs = str => { const m = str.match(/total=(\d+)ms/); return m ? parseInt(m[1]) : null; };
+
+  const sttTimes = [], llmTimes = [], ttsTimes = [], totalTimes = [];
+  const callSids = new Set();
+  let callCount = 0;
+
+  for (const { line } of logBuffer) {
+    const sidMatch = line.match(/\[([A-Z]{2}[0-9a-f]{32})\]/);
+    if (sidMatch) callSids.add(sidMatch[1]);
+    if ((line.includes('STT') && line.includes('✓')) || (line.includes('STT   ✓'))) {
+      const ms = parseMs(line); if (ms) sttTimes.push(ms);
+    }
+    if (line.includes('3/5 LLM') && line.includes('✓')) {
+      const ms = parseMs(line); if (ms) llmTimes.push(ms);
+    }
+    if (line.includes('5/5 TTS') && line.includes('✓')) {
+      const ms = parseMs(line); if (ms) ttsTimes.push(ms);
+    }
+    if (line.includes('ASYNC DONE')) {
+      const ms = parseTotalMs(line); if (ms) { totalTimes.push(ms); callCount++; }
+    }
+    if (line.includes('CALL STARTED') || line.includes('OUTBOUND CALL INITIATED')) callCount++;
+  }
+
+  const avg = arr => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
+  const p95 = arr => { if (!arr.length) return null; const s = [...arr].sort((a, b) => a - b); return s[Math.floor(s.length * 0.95)]; };
+
+  res.json({
+    calls: { total: callSids.size || callCount },
+    latency: {
+      stt:   { avg: avg(sttTimes),   p95: p95(sttTimes),   samples: sttTimes.length },
+      llm:   { avg: avg(llmTimes),   p95: p95(llmTimes),   samples: llmTimes.length },
+      tts:   { avg: avg(ttsTimes),   p95: p95(ttsTimes),   samples: ttsTimes.length },
+      total: { avg: avg(totalTimes), p95: p95(totalTimes), samples: totalTimes.length },
+    },
+    errors: logBuffer.filter(l => l.level === 'error').length,
+    warnings: logBuffer.filter(l => l.level === 'warn').length,
+    logCount: logBuffer.length,
+  });
+});
+
 app.get('/admin/providers', adminAuth, async (req, res) => {
   try {
     const config = await getProviderConfig();

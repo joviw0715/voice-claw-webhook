@@ -427,6 +427,101 @@
       .sidebar { display: none; }
       .stat-grid { grid-template-columns: repeat(2, 1fr); }
       .config-key { flex: 0 0 140px; }
+      .pipeline-row { flex-direction: column; }
+      .pipeline-arrow { transform: rotate(90deg); }
+      .vapi-bar { flex-wrap: wrap; gap: 12px; }
+      .vapi-bar-sep { display: none; }
+    }
+
+    /* ── Vapi-style top metric bar ──────────────────────────── */
+    .vapi-bar {
+      display: flex; align-items: stretch; gap: 0;
+      background: var(--glass-bg); backdrop-filter: blur(var(--blur));
+      border: 1px solid var(--border); border-radius: var(--r);
+      overflow: hidden;
+    }
+
+    .vapi-bar-item {
+      flex: 1; padding: 18px 24px; display: flex; flex-direction: column; gap: 6px;
+    }
+
+    .vapi-bar-sep {
+      width: 1px; background: var(--border); flex-shrink: 0;
+    }
+
+    .vapi-bar-label {
+      font-size: 10px; font-weight: 700; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--fg-dim);
+    }
+
+    .vapi-bar-value {
+      font-family: var(--font-head); font-size: 28px; font-weight: 700; color: var(--fg);
+      line-height: 1;
+    }
+
+    .vapi-latency-bar {
+      height: 4px; background: var(--surface3); border-radius: 2px; overflow: hidden;
+      margin-top: 4px;
+    }
+    .vapi-latency-fill {
+      height: 100%; border-radius: 2px; width: 0%;
+      background: linear-gradient(90deg, #22C55E 0%, #F59E0B 60%, #EF4444 100%);
+      transition: width .6s ease;
+    }
+
+    /* ── Pipeline cards ─────────────────────────────────────── */
+    .pipeline-row {
+      display: flex; align-items: center; gap: 12px;
+    }
+
+    .pipeline-card {
+      flex: 1; background: var(--surface2);
+      border: 1px solid var(--border); border-radius: var(--r);
+      padding: 18px 20px; display: flex; flex-direction: column; gap: 8px;
+      transition: border-color var(--transition);
+    }
+    .pipeline-card:hover { border-color: var(--border-hi); }
+
+    .pipeline-card-header {
+      display: flex; align-items: center; gap: 8px;
+    }
+
+    .pipeline-dot {
+      width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
+    }
+
+    .pipeline-type {
+      font-size: 10px; font-weight: 700; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--fg-dim);
+    }
+
+    .pipeline-name {
+      font-family: var(--font-head); font-size: 18px; font-weight: 600; color: var(--fg);
+    }
+
+    .pipeline-provider {
+      font-size: 12px; color: var(--fg-muted);
+    }
+
+    .pipeline-footer {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-top: 4px; padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+
+    .pipeline-cost { font-size: 12px; color: var(--fg-dim); font-family: var(--font-mono); }
+
+    .pipeline-latency-badge {
+      font-family: var(--font-head); font-size: 14px; font-weight: 700;
+      padding: 2px 10px; border-radius: 99px;
+    }
+    .lat-fast   { color: var(--accent); background: var(--accent-dim); }
+    .lat-medium { color: var(--warn); background: rgba(245,158,11,.12); }
+    .lat-slow   { color: var(--danger); background: rgba(239,68,68,.12); }
+    .lat-none   { color: var(--fg-dim); background: var(--surface3); }
+
+    .pipeline-arrow {
+      font-size: 20px; color: var(--fg-dim); flex-shrink: 0; padding: 0 4px;
     }
   </style>
 </head>
@@ -478,45 +573,96 @@
 
       <!-- ── Overview ─────────────────────────────────────── -->
       <div class="view active" id="view-overview">
-        <div class="stat-grid" id="stat-grid">
-          <div class="stat-card stat-info">
-            <div class="stat-label">Health</div>
-            <div class="stat-value" id="s-health">—</div>
-            <div class="stat-sub">Server status</div>
+
+        <!-- Top metric bar (Vapi-style) -->
+        <div class="vapi-bar">
+          <div class="vapi-bar-item">
+            <div class="vapi-bar-label">TOTAL CALLS</div>
+            <div class="vapi-bar-value" id="v-calls">—</div>
           </div>
-          <div class="stat-card">
-            <div class="stat-label">Total Logs</div>
-            <div class="stat-value" id="s-total" style="color:var(--fg)">—</div>
-            <div class="stat-sub">In memory buffer</div>
+          <div class="vapi-bar-sep"></div>
+          <div class="vapi-bar-item">
+            <div class="vapi-bar-label">AVG LATENCY (E2E)</div>
+            <div class="vapi-bar-value" id="v-latency">—</div>
+            <div class="vapi-latency-bar" id="v-latency-bar"><div class="vapi-latency-fill" id="v-latency-fill"></div></div>
           </div>
-          <div class="stat-card stat-err">
-            <div class="stat-label">Errors</div>
-            <div class="stat-value" id="s-errors">—</div>
-            <div class="stat-sub">Since last restart</div>
+          <div class="vapi-bar-sep"></div>
+          <div class="vapi-bar-item">
+            <div class="vapi-bar-label">ERRORS</div>
+            <div class="vapi-bar-value" id="v-errors" style="color:var(--danger)">—</div>
           </div>
-          <div class="stat-card stat-warn">
-            <div class="stat-label">Warnings</div>
-            <div class="stat-value" id="s-warns">—</div>
-            <div class="stat-sub">Since last restart</div>
+          <div class="vapi-bar-sep"></div>
+          <div class="vapi-bar-item">
+            <div class="vapi-bar-label">SERVER</div>
+            <div class="vapi-bar-value" id="s-health" style="color:var(--accent)">—</div>
           </div>
         </div>
 
-        <div class="card">
-          <div class="card-header">
-            <div class="card-title">Service Health</div>
-            <button class="btn btn-ghost" style="font-size:12px" onclick="loadHealth()">Check</button>
+        <!-- Pipeline cards (Vapi-style: STT → LLM → TTS) -->
+        <div class="pipeline-row">
+          <div class="pipeline-card" id="pc-stt">
+            <div class="pipeline-card-header">
+              <span class="pipeline-dot" style="background:#F59E0B"></span>
+              <span class="pipeline-type">TRANSCRIBER</span>
+            </div>
+            <div class="pipeline-name" id="pc-stt-name">—</div>
+            <div class="pipeline-provider" id="pc-stt-prov">STT Provider</div>
+            <div class="pipeline-footer">
+              <span class="pipeline-cost" id="pc-stt-cost">—</span>
+              <span class="pipeline-latency-badge" id="pc-stt-lat">—</span>
+            </div>
           </div>
-          <div class="card-body">
-            <div class="health-grid" id="health-grid">
-              <div class="health-item"><div class="health-name">Loading…</div></div>
+
+          <div class="pipeline-arrow">→</div>
+
+          <div class="pipeline-card" id="pc-llm">
+            <div class="pipeline-card-header">
+              <span class="pipeline-dot" style="background:#38BDF8"></span>
+              <span class="pipeline-type">MODEL</span>
+            </div>
+            <div class="pipeline-name" id="pc-llm-name">—</div>
+            <div class="pipeline-provider" id="pc-llm-prov">LLM Provider</div>
+            <div class="pipeline-footer">
+              <span class="pipeline-cost" id="pc-llm-cost">—</span>
+              <span class="pipeline-latency-badge" id="pc-llm-lat">—</span>
+            </div>
+          </div>
+
+          <div class="pipeline-arrow">→</div>
+
+          <div class="pipeline-card" id="pc-tts">
+            <div class="pipeline-card-header">
+              <span class="pipeline-dot" style="background:#A78BFA"></span>
+              <span class="pipeline-type">VOICE</span>
+            </div>
+            <div class="pipeline-name" id="pc-tts-name">—</div>
+            <div class="pipeline-provider" id="pc-tts-prov">TTS Provider</div>
+            <div class="pipeline-footer">
+              <span class="pipeline-cost" id="pc-tts-cost">—</span>
+              <span class="pipeline-latency-badge" id="pc-tts-lat">—</span>
             </div>
           </div>
         </div>
 
-        <div class="card">
-          <div class="card-header"><div class="card-title">Recent Logs</div></div>
-          <div class="log-pane" id="overview-log" style="height:260px"></div>
+        <!-- Service health + recent logs -->
+        <div style="display:grid;grid-template-columns:1fr 2fr;gap:16px;">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Service Health</div>
+              <button class="btn btn-ghost" style="font-size:12px" onclick="loadHealth()">Check</button>
+            </div>
+            <div class="card-body">
+              <div class="health-grid" id="health-grid">
+                <div class="health-item"><div class="health-name">Loading…</div></div>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><div class="card-title">Recent Logs</div></div>
+            <div class="log-pane" id="overview-log" style="height:220px"></div>
+          </div>
         </div>
+
       </div>
 
       <!-- ── Logs ──────────────────────────────────────────── -->
@@ -721,11 +867,12 @@ async function checkServerHealth() {
     document.getElementById('srv-dot').className = `status-dot ${ok ? 'ok' : 'err'}`;
     document.getElementById('srv-label').textContent = ok ? 'Online' : 'Degraded';
     document.getElementById('s-health').textContent = ok ? 'OK' : 'DOWN';
-    document.getElementById('s-health').closest('.stat-card').className = `stat-card ${ok ? 'stat-ok' : 'stat-err'}`;
+    document.getElementById('s-health').style.color = ok ? 'var(--accent)' : 'var(--danger)';
   } catch {
     document.getElementById('srv-dot').className = 'status-dot err';
     document.getElementById('srv-label').textContent = 'Offline';
     document.getElementById('s-health').textContent = 'DOWN';
+    document.getElementById('s-health').style.color = 'var(--danger)';
   }
 }
 
@@ -855,9 +1002,12 @@ function toggleAutoRefresh() {
 
 function startAutoRefresh() {
   stopAutoRefresh();
+  let tick = 0;
   autoRefreshTimer = setInterval(async () => {
     await loadNewLogs();
     renderLogs('overview-log');
+    // Refresh stats every 5 ticks (~15s) to avoid spamming
+    if (++tick % 5 === 0) loadStats();
   }, 3000);
 }
 
@@ -865,11 +1015,83 @@ function stopAutoRefresh() {
   if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
 }
 
-// ── Stats ─────────────────────────────────────────────────────────────────────
+// ── Stats + pipeline cards ─────────────────────────────────────────────────
+function latClass(ms) {
+  if (ms === null) return 'lat-none';
+  if (ms < 600) return 'lat-fast';
+  if (ms < 1500) return 'lat-medium';
+  return 'lat-slow';
+}
+
+function fmtMs(ms) { return ms === null ? '—' : ms >= 1000 ? (ms/1000).toFixed(1)+'s' : ms+'ms'; }
+
+async function loadStats() {
+  try {
+    const r = await fetch(`${API}/admin/stats`);
+    if (!r.ok) return;
+    const d = await r.json();
+
+    // Top bar
+    document.getElementById('v-calls').textContent = d.calls?.total ?? '—';
+    const totalAvg = d.latency?.total?.avg ?? null;
+    document.getElementById('v-latency').textContent = fmtMs(totalAvg);
+    document.getElementById('v-errors').textContent = d.errors ?? '—';
+
+    // Latency bar fill (max 5000ms → 100%)
+    const pct = totalAvg ? Math.min(100, (totalAvg / 5000) * 100) : 0;
+    document.getElementById('v-latency-fill').style.width = pct + '%';
+
+    // Pipeline cards — config driven
+    const cfgR = await fetch(`${API}/admin/config`);
+    const cfg = cfgR.ok ? await cfgR.json() : {};
+
+    // STT card
+    const sttProv = cfg.stt?.STT_PROVIDER || 'auto';
+    const sttName = sttProv === 'ctm' ? 'CTM ASR' : sttProv === 'auto' ? 'Azure STT' : sttProv;
+    const sttLat = d.latency?.stt?.avg ?? null;
+    setText('pc-stt-name', sttName);
+    setText('pc-stt-prov', cfg.stt?.AZURE_SPEECH_LANGUAGE || cfg.stt?.CTM_ASR_LANGUAGE || '');
+    setText('pc-stt-cost', '');
+    setLatBadge('pc-stt-lat', sttLat);
+
+    // LLM card
+    const llmProv = cfg.llm?.LLM_PROVIDER || 'auto';
+    const llmName = llmProv === 'ctm' ? (cfg.llm?.CTM_LLM_MODEL || 'CTM LLM') :
+                    llmProv === 'gemini' ? (cfg.llm?.GEMINI_MODEL || 'Gemini') :
+                    llmProv === 'openclaw' ? 'OpenClaw' :
+                    llmProv === 'groq' ? 'Groq' :
+                    llmProv === 'openrouter' ? (cfg.llm?.LLM_MODEL || 'OpenRouter') :
+                    'OpenClaw';
+    const llmLat = d.latency?.llm?.avg ?? null;
+    setText('pc-llm-name', llmName);
+    setText('pc-llm-prov', llmProv === 'auto' ? 'auto-route' : llmProv);
+    setText('pc-llm-cost', '');
+    setLatBadge('pc-llm-lat', llmLat);
+
+    // TTS card
+    const ttsProv = cfg.tts?.TTS_PROVIDER || 'auto';
+    const ttsName = ttsProv === 'ctm' ? (cfg.tts?.CTM_TTS_VOICE || 'CTM TTS') :
+                    ttsProv === 'minimax' ? (cfg.tts?.MINIMAX_VOICE_ID || 'MiniMax') :
+                    (cfg.tts?.MINIMAX_VOICE_ID || 'MiniMax');
+    const ttsLat = d.latency?.tts?.avg ?? null;
+    setText('pc-tts-name', ttsName);
+    setText('pc-tts-prov', ttsProv === 'auto' ? cfg.tts?.MINIMAX_MODEL || 'MiniMax' : ttsProv);
+    setText('pc-tts-cost', '');
+    setLatBadge('pc-tts-lat', ttsLat);
+
+  } catch {}
+}
+
+function setText(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
+
+function setLatBadge(id, ms) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = fmtMs(ms);
+  el.className = 'pipeline-latency-badge ' + latClass(ms);
+}
+
 function updateStats() {
-  document.getElementById('s-total').textContent = logs.length;
-  document.getElementById('s-errors').textContent = logs.filter(l => l.level === 'error').length;
-  document.getElementById('s-warns').textContent  = logs.filter(l => l.level === 'warn').length;
   renderLogs('overview-log');
 }
 
@@ -949,7 +1171,7 @@ function renderConfig(data) {
 // ── Refresh all ───────────────────────────────────────────────────────────────
 async function refreshAll() {
   document.getElementById('last-refresh').textContent = 'Refreshing…';
-  await Promise.all([checkServerHealth(), loadAllLogs(), loadHealth()]);
+  await Promise.all([checkServerHealth(), loadAllLogs(), loadHealth(), loadStats()]);
   document.getElementById('last-refresh').textContent =
     'Updated ' + new Date().toLocaleTimeString();
 }
@@ -959,13 +1181,12 @@ async function refreshAll() {
   await checkServerHealth();
   const authed = await checkAuth();
   if (authed) {
-    await Promise.all([loadAllLogs(), loadHealth()]);
+    await Promise.all([loadAllLogs(), loadHealth(), loadStats()]);
     document.getElementById('last-refresh').textContent =
       'Updated ' + new Date().toLocaleTimeString();
     startAutoRefresh();
   } else {
     showLoginModal();
-    // Still show server health which needs no auth
     loadHealth();
   }
 })();
