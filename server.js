@@ -379,10 +379,14 @@ const VALID_LLM = ['auto', 'ctm', 'gemini', 'groq', 'openrouter', 'openclaw'];
 const VALID_TTS = ['auto', 'ctm', 'minimax'];
 const VALID_STT = ['auto', 'ctm', 'azure'];
 
+// Shared auth token and session cookie helpers
+const getServerToken = () => getServerToken();
+const getSessionCookie = (req) => (req.headers.cookie || '').split(';').find(p => p.trim().startsWith('vc_session='))?.split('=').slice(1).join('=');
+
 // Signed session cookie using HMAC-SHA256.
 // Cookie value: base64url(token) + '.' + hex(HMAC-SHA256(base64url(token), secret))
 function signToken(tok) {
-  const secret = process.env.CONSOLE_API_TOKEN || process.env.SESSION_SECRET || 'voiceclaw';
+  const secret = getServerToken() || 'voiceclaw';
   const payload = Buffer.from(tok).toString('base64url');
   const mac = createHmac('sha256', secret).update(payload).digest('hex');
   return `${payload}.${mac}`;
@@ -403,21 +407,20 @@ function verifySessionCookie(cookie) {
 }
 
 function adminAuth(req, res, next) {
-  const serverToken = process.env.CONSOLE_API_TOKEN || process.env.SESSION_SECRET || '';
+  const serverToken = getServerToken();
   if (!serverToken) return next();
   const auth = req.headers['authorization'] || '';
   const expected = `Bearer ${serverToken}`;
   if (auth.length === expected.length && timingSafeEqual(Buffer.from(auth), Buffer.from(expected))) return next();
   // Accept session cookie (browser) — extract vc_session directly without building full dict
-  const rawCookie = req.headers.cookie || '';
-  const sessionVal = rawCookie.split(';').find(p => p.trim().startsWith('vc_session='))?.split('=').slice(1).join('=');
+  const sessionVal = getSessionCookie(req);
   if (verifySessionCookie(sessionVal)) return next();
   return res.status(401).json({ error: 'Unauthorized' });
 }
 
 // ── Admin: login (sets session cookie) ──────────────────────────────────────
 app.post('/admin/login', (req, res) => {
-  const serverToken = process.env.CONSOLE_API_TOKEN || process.env.SESSION_SECRET || '';
+  const serverToken = getServerToken();
   const { token } = req.body ?? {};
   const supplied = Buffer.from(token ?? '');
   const expected = Buffer.from(serverToken);
@@ -432,10 +435,9 @@ app.post('/admin/login', (req, res) => {
 
 // ── Admin: me (check current auth status) ───────────────────────────────────
 app.get('/admin/me', (req, res) => {
-  const serverToken = process.env.CONSOLE_API_TOKEN || process.env.SESSION_SECRET || '';
+  const serverToken = getServerToken();
   if (!serverToken) return res.json({ authed: true, noToken: true });
-  const rawCookie = req.headers.cookie || '';
-  const sessionVal = rawCookie.split(';').find(p => p.trim().startsWith('vc_session='))?.split('=').slice(1).join('=');
+  const sessionVal = getSessionCookie(req);
   const auth = req.headers['authorization'] || '';
   const expectedBearer = `Bearer ${serverToken}`;
   const bearerMatch = auth.length === expectedBearer.length && timingSafeEqual(Buffer.from(auth), Buffer.from(expectedBearer));
