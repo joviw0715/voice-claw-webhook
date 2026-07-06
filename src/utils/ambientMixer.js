@@ -40,7 +40,7 @@ export function mixAmbient(ttsPcm) {
   const out = Buffer.allocUnsafe(ttsPcm.length);
   const ambLen = ambientBuf.length & ~1;
 
-  for (let i = 0; i < ttsPcm.length - 1; i += 2) {
+  for (let i = 0; i < ttsPcm.length; i += 2) {
     const tts = ttsPcm.readInt16LE(i);
     const amb = ambientBuf.readInt16LE(ambientPos % ambLen);
     const mixed = Math.max(-32768, Math.min(32767, tts + Math.round(amb * vol)));

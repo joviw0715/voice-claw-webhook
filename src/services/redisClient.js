@@ -38,20 +38,6 @@ async function getConversation(callSid) {
   try { return JSON.parse(raw); } catch { return []; }
 }
 
-async function appendConversation(callSid, message) {
-  const key = `conv:${callSid}`;
-
-  let history = await getConversation(callSid);
-  history.push(message);
-
-  // ✅ trim history
-  if (history.length > MAX_HISTORY) {
-    history = history.slice(-MAX_HISTORY);
-  }
-
-  await getClient().setex(key, CONVERSATION_TTL, JSON.stringify(history));
-}
-
 async function setConversation(callSid, messages) {
   // ✅ ensure trimmed
   if (messages.length > MAX_HISTORY) {
@@ -184,7 +170,6 @@ async function setProviderConfig(config) {
 
 export {
   getConversation,
-  appendConversation,
   setConversation,
   getContext,
   saveContext,

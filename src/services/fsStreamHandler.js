@@ -14,10 +14,8 @@ import { getLlmProvider, getDefaultLlmProvider } from '../providers/llm/index.js
 import { getTtsProvider, getDefaultTtsProvider } from '../providers/tts/index.js';
 import { getSttProvider, getDefaultSttProvider } from '../providers/stt/index.js';
 import { getContext, saveContext, getUserMemory } from './redisClient.js';
-import { createRequire } from 'module';
-
-const require = createRequire(import.meta.url);
-const { Connection: EslConnection } = require('modesl');
+import modesl from 'modesl';
+const { Connection: EslConnection } = modesl;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const AUDIO_DIR = join(__dirname, '../../audio');
