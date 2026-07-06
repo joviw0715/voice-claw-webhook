@@ -1104,8 +1104,10 @@ async function loadNewLogs() {
       newOnes = newOnes.slice(lastLogTsCount);
       if (newOnes.length) {
         logs = [...logs, ...newOnes].slice(-500);
-        lastLogTs = newOnes[newOnes.length - 1].ts;
-        lastLogTsCount = newOnes.filter(l => l.ts === lastLogTs).length;
+        const newTs = newOnes[newOnes.length - 1].ts;
+        const countAtNewTs = newOnes.filter(l => l.ts === newTs).length;
+        lastLogTsCount = (newTs === lastLogTs ? lastLogTsCount : 0) + countAtNewTs;
+        lastLogTs = newTs;
         renderLogs();
         updateStats();
       }
@@ -1540,8 +1542,10 @@ function startCallLogPoll(sid) {
       if (lastTs) allEntries = allEntries.slice(lastTsCount);
       const relevant = allEntries.filter(l => l.line.includes(sid));
       if (relevant.length) {
-        lastTs = relevant[relevant.length - 1].ts;
-        lastTsCount = allEntries.filter(l => l.ts === lastTs).length;
+        const newTs = relevant[relevant.length - 1].ts;
+        const countAtNewTs = allEntries.filter(l => l.ts === newTs).length;
+        lastTsCount = (newTs === lastTs ? lastTsCount : 0) + countAtNewTs;
+        lastTs = newTs;
         relevant.forEach(l => {
           const line = document.createElement('div');
           line.style.color = l.level === 'error' ? 'var(--danger)' : l.level === 'warn' ? 'var(--warn)' : 'var(--fg-muted)';

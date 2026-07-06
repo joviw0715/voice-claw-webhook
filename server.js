@@ -478,7 +478,7 @@ app.get('/admin/stats', adminAuth, (req, res) => {
   for (const { line } of logBuffer) {
     const sidMatch = line.match(/\[([A-Z]{2}[0-9a-f]{32})\]/);
     if (sidMatch) callSids.add(sidMatch[1]);
-    if ((line.includes('STT') && line.includes('✓')) || (line.includes('STT   ✓'))) {
+    if (line.includes('STT') && line.includes('✓')) {
       const ms = parseMs(line); if (ms) sttTimes.push(ms);
     }
     if (line.includes('3/5 LLM') && line.includes('✓')) {
