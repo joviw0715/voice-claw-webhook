@@ -1,0 +1,59 @@
+name: Hourly Code Review
+
+on:
+  schedule:
+    - cron: '7 * * * *'  # Every hour at :07
+  workflow_dispatch:       # Allow manual trigger
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout staging
+        uses: actions/checkout@v4
+        with:
+          ref: staging
+          fetch-depth: 0
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Claude Code review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          npx @anthropic-ai/claude-code@latest \
+            --print \
+            --dangerously-skip-permissions \
+            "Review this voice-claw-webhook codebase (Node.js, Express, Twilio voice AI) for real improvements only — bugs, security issues, error handling gaps, performance problems, AND frontend issues in public/index.html. Run \`npm test\` after any backend change. Only commit if tests pass. If nothing needs improvement, say so and stop. Never refactor working code for style. Never change public APIs."
+
+      - name: Push any fixes
+        run: |
+          git config user.name "Yotta Dev Bot"
+          git config user.email "joviw0715@gmail.com"
+          git diff --quiet && git diff --staged --quiet || git push origin staging
+
+      - name: Send email report
+        if: always()
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+        run: |
+          COMMITS=$(git log --oneline -5 2>/dev/null || echo "No recent commits")
+          curl -s -X POST https://api.resend.com/emails \
+            -H "Authorization: Bearer $RESEND_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"from\": \"Yotta Dev <onboarding@resend.dev>\",
+              \"to\": [\"joviw0715@gmail.com\"],
+              \"subject\": \"🤖 voice-claw-webhook hourly review — $(date '+%Y-%m-%d %H:%M')\",
+              \"text\": \"Recent commits:\n$COMMITS\"
+            }"
