@@ -30,9 +30,7 @@ function captureLog(level, args) {
   if (logBuffer.length > LOG_BUFFER_MAX) logBuffer.shift();
 }
 
-console.log  = (...a) => { captureLog('info',  a); _origLog(...a); };
-console.error = (...a) => { captureLog('error', a); _origErr(...a); };
-console.warn  = (...a) => { captureLog('warn',  a); _origWarn(...a); };
+[['log','info',_origLog],['error','error',_origErr],['warn','warn',_origWarn]].forEach(([m,l,orig]) => { console[m] = (...a) => { captureLog(l,a); orig(...a); }; });
 
 const app = express();
 app.use(express.urlencoded({ extended: false }));
@@ -404,29 +402,16 @@ function verifySessionCookie(cookie) {
   } catch { return false; }
 }
 
-function parseCookies(req) {
-  return Object.fromEntries(
-    (req.headers.cookie || '').split(';').flatMap(part => {
-      const eq = part.indexOf('=');
-      if (eq < 0) return [];
-      try {
-        return [[decodeURIComponent(part.slice(0, eq).trim()), decodeURIComponent(part.slice(eq + 1).trim())]];
-      } catch { return [[part.slice(0, eq).trim(), part.slice(eq + 1).trim()]]; }
-    })
-  );
-}
-
 function adminAuth(req, res, next) {
   const serverToken = process.env.CONSOLE_API_TOKEN || process.env.SESSION_SECRET || '';
-  // If no token configured, allow all admin access (dev mode)
   if (!serverToken) return next();
-  // Accept Bearer token (API clients / curl) — timing-safe comparison
   const auth = req.headers['authorization'] || '';
   const expected = `Bearer ${serverToken}`;
   if (auth.length === expected.length && timingSafeEqual(Buffer.from(auth), Buffer.from(expected))) return next();
-  // Accept session cookie (browser)
-  const cookies = parseCookies(req);
-  if (verifySessionCookie(cookies['vc_session'])) return next();
+  // Accept session cookie (browser) — extract vc_session directly without building full dict
+  const rawCookie = req.headers.cookie || '';
+  const sessionVal = rawCookie.split(';').find(p => p.trim().startsWith('vc_session='))?.split('=').slice(1).join('=');
+  if (verifySessionCookie(sessionVal)) return next();
   return res.status(401).json({ error: 'Unauthorized' });
 }
 
