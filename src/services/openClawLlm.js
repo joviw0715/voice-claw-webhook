@@ -92,47 +92,6 @@ export function classifyIntent(userText) {
   return TOOLS_RE.test(userText) ? 'tools' : 'chat';
 }
 
-// Extract customer facts from a call transcript for persistent user memory.
-// Returns a JSON object of facts, or null if extraction fails / not enough history.
-export async function extractMemoryFacts(history) {
-  const apiKey = process.env.LLM_API_KEY;
-  if (!apiKey || history.length < 2) return null; // need at least 1 full turn
-
-  const transcript = history
-    .map(m => `${m.role === 'user' ? '用戶' : '祖兒'}: ${m.content}`)
-    .join('\n');
-  try {
-    const response = await axios.post(LLM_BASE_URL, {
-      model: process.env.LLM_MODEL || FREE_MODELS[0],
-      messages: [
-        {
-          role: 'system',
-          content: 'Find the customer\'s name or nickname from this Cantonese conversation. Return ONLY JSON: {"name":"their name"} — or {} if not mentioned. No other text.',
-        },
-        { role: 'user', content: transcript },
-      ],
-      max_tokens: 50,
-    }, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      timeout: 10000,
-      httpsAgent,
-    });
-
-    const content = response.data.choices[0]?.message?.content?.trim() ?? '';
-    const match = content.match(/\{[\s\S]*\}/);
-    if (!match) {
-      console.warn('[extractMemoryFacts] no JSON object in response:', content.slice(0, 100));
-      return null;
-    }
-    return JSON.parse(match[0]);
-  } catch (err) {
-    console.warn('[extractMemoryFacts] failed:', err.response?.data?.error?.message || err.message);
-    return null;
-  }
-}
 
 // Streaming via OpenRouter — for non-tool conversational queries where speed matters
 export async function* streamQueryOpenRouter(messages) {

@@ -68,18 +68,6 @@ async function eslBroadcast(fsUuid, fileUrl) {
   });
 }
 
-// Write mulaw chunks to a temp .ulaw file, return the filename
-function writeMulawFile(mulawChunks, filename) {
-  return new Promise((resolve, reject) => {
-    const filePath = join(AUDIO_DIR, filename);
-    const ws = createWriteStream(filePath);
-    for (const chunk of mulawChunks) ws.write(chunk);
-    ws.end();
-    ws.on('finish', () => resolve(filePath));
-    ws.on('error', reject);
-  });
-}
-
 // Decode a single mulaw byte to 16-bit linear PCM
 function mulawToLinear(u) {
   u = ~u & 0xFF;

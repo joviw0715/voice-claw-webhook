@@ -91,12 +91,7 @@ async function updateUserMemory(phoneNumber, updates) {
   const key = `mem:${phoneNumber}`;
   const existing = await getUserMemory(phoneNumber);
 
-  // Name always overwrites — caller may give a different name on a new call
-  const merged = {
-    ...existing,
-    ...updates,
-    ...(updates.name ? { name: updates.name } : {}),
-  };
+  const merged = { ...existing, ...updates };
 
   await getClient().setex(
     key,
@@ -105,11 +100,6 @@ async function updateUserMemory(phoneNumber, updates) {
   );
 
   return merged;
-}
-
-// ✅ alias for consistency
-async function saveUserMemory(phoneNumber, memory) {
-  return await updateUserMemory(phoneNumber, memory);
 }
 
 // ─────────────────────────────────────────────
@@ -205,7 +195,6 @@ export {
   saveContext,
   getUserMemory,
   updateUserMemory,
-  saveUserMemory,
   setResult,
   getResult,
   deleteResult,
