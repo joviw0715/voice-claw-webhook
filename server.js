@@ -504,8 +504,8 @@ app.get('/admin/stats', adminAuth, (req, res) => {
       tts:   { avg: avg(ttsTimes),   p95: p95(ttsTimes),   samples: ttsTimes.length },
       total: { avg: avg(totalTimes), p95: p95(totalTimes), samples: totalTimes.length },
     },
-    errors: logBuffer.filter(l => l.level === 'error').length,
-    warnings: logBuffer.filter(l => l.level === 'warn').length,
+    errors: logBuffer.reduce((n, l) => n + (l.level === 'error' ? 1 : 0), 0),
+    warnings: logBuffer.reduce((n, l) => n + (l.level === 'warn' ? 1 : 0), 0),
     logCount: logBuffer.length,
   });
 });

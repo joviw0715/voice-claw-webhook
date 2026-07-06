@@ -926,6 +926,7 @@
 const API = '';
 let logs = [];
 let logFilter = 'all';
+let _cachedConfig = null; // env config is a static snapshot — fetch once
 let autoRefreshTimer = null;
 let lastLogTs = null;
 let lastLogTsCount = 0; // how many entries we've already seen at lastLogTs
@@ -1218,9 +1219,12 @@ async function loadStats() {
     const pct = totalAvg ? Math.min(100, (totalAvg / 5000) * 100) : 0;
     document.getElementById('v-latency-fill').style.width = pct + '%';
 
-    // Pipeline cards — config driven
-    const cfgR = await fetch(`${API}/admin/config`);
-    const cfg = cfgR.ok ? await cfgR.json() : {};
+    // Pipeline cards — config driven (cached: env vars don't change at runtime)
+    if (!_cachedConfig) {
+      const cfgR = await fetch(`${API}/admin/config`);
+      _cachedConfig = cfgR.ok ? await cfgR.json() : {};
+    }
+    const cfg = _cachedConfig;
 
     // STT card
     const sttProv = cfg.stt?.STT_PROVIDER || 'auto';

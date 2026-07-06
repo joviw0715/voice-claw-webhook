@@ -24,28 +24,20 @@ export async function* parseSseStream(responseData) {
     buf += decoder.write(chunk);
     const lines = buf.split('\n');
     buf = lines.pop() ?? '';
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith('data:')) continue;
-      const data = trimmed.slice(5).trim();
-      if (data === '[DONE]') return;
-      try {
-        const json = JSON.parse(data);
-        const tok = json.choices?.[0]?.delta?.content;
-        if (tok) yield tok;
-      } catch { /* non-JSON SSE line */ }
-    }
+    yield* _yieldSseLines(lines);
   }
   // Flush any multi-byte UTF-8 sequence the decoder held across the last chunk
-  buf += decoder.end();
-  for (const line of buf.split('\n')) {
+  yield* _yieldSseLines((buf + decoder.end()).split('\n'));
+}
+
+function* _yieldSseLines(lines) {
+  for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed.startsWith('data:')) continue;
     const data = trimmed.slice(5).trim();
     if (data === '[DONE]') return;
     try {
-      const json = JSON.parse(data);
-      const tok = json.choices?.[0]?.delta?.content;
+      const tok = JSON.parse(data).choices?.[0]?.delta?.content;
       if (tok) yield tok;
     } catch { /* non-JSON SSE line */ }
   }
