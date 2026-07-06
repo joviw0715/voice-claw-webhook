@@ -1,13 +1,5 @@
 import axios from 'axios';
-import fs from 'fs';
-import path from 'path';
-import crypto from 'crypto';
-import { fileURLToPath } from 'url';
 import { encodePcm16ToMulaw8k } from '../../utils/mulaw.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const AUDIO_DIR = path.join(__dirname, '..', '..', '..', 'audio');
 
 export function isAvailable() {
   return !!process.env.CTM_TTS_URL && process.env.USE_CTM_TTS === 'true';
@@ -91,34 +83,4 @@ export function synthesizeToStream(text, { onChunk, onDone, onError, voiceId }) 
   };
 }
 
-export async function synthesizeSpeech(text, { voiceId } = {}) {
-  if (!process.env.CTM_TTS_URL) throw new Error('CTM_TTS_URL not set');
-  const ctmVoice = resolveCtmVoice(voiceId);
-  const url = `${process.env.CTM_TTS_URL.replace(/\/$/, '')}/v1/tts`;
-  const response = await axios.post(
-    url,
-    {
-      model: process.env.CTM_TTS_MODEL || 'ctm_tts',
-      text,
-      voice: ctmVoice,
-      stream: false,
-    },
-    {
-      headers: { 'Content-Type': 'application/json' },
-      responseType: 'arraybuffer',
-      timeout: 30000,
-    },
-  );
-
-  fs.mkdirSync(AUDIO_DIR, { recursive: true });
-  const filename = `ctm_tts_${crypto.randomUUID()}.wav`;
-  const filepath = path.join(AUDIO_DIR, filename);
-  fs.writeFileSync(filepath, Buffer.from(response.data));
-
-  // Auto-delete after 5 minutes — enough time for Twilio to fetch and play the file
-  setTimeout(() => fs.unlink(filepath, () => {}), 5 * 60 * 1000);
-
-  const baseUrl = (process.env.BASE_URL || '').replace(/\/$/, '');
-  return `${baseUrl}/audio/${filename}`;
-}
 export const __name = 'ctm';

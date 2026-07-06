@@ -8,9 +8,4 @@ export async function* stream(messages) {
   yield* streamQueryGemini(messages);
 }
 
-export async function query(messages) {
-  let result = '';
-  for await (const tok of streamQueryGemini(messages)) result += tok;
-  return result;
-}
 export const __name = 'gemini';

@@ -8,9 +8,4 @@ export async function* stream(messages) {
   yield* streamQueryOpenRouter(messages);
 }
 
-export async function query(messages) {
-  let result = '';
-  for await (const tok of streamQueryOpenRouter(messages)) result += tok;
-  return result;
-}
 export const __name = 'openrouter';

@@ -8,9 +8,4 @@ export async function* stream(messages) {
   yield* streamQueryGroq(messages);
 }
 
-export async function query(messages) {
-  let result = '';
-  for await (const tok of streamQueryGroq(messages)) result += tok;
-  return result;
-}
 export const __name = 'groq';

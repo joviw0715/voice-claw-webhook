@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "docx": {
+      "source": "anthropics/claude-agent-sdk-demos",
+      "sourceType": "github",
+      "skillPath": "resume-generator/.claude/skills/docx/SKILL.md",
+      "computedHash": "c4aa9a84be681621c08a4d8674b70e47ee0fd6e16ee4a932e27b4686847dee5d"
+    }
+  }
+}
