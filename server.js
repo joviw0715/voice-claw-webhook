@@ -434,11 +434,12 @@ app.post('/admin/login', (req, res) => {
 app.get('/admin/me', (req, res) => {
   const serverToken = process.env.CONSOLE_API_TOKEN || process.env.SESSION_SECRET || '';
   if (!serverToken) return res.json({ authed: true, noToken: true });
-  const cookies = parseCookies(req);
+  const rawCookie = req.headers.cookie || '';
+  const sessionVal = rawCookie.split(';').find(p => p.trim().startsWith('vc_session='))?.split('=').slice(1).join('=');
   const auth = req.headers['authorization'] || '';
   const expectedBearer = `Bearer ${serverToken}`;
   const bearerMatch = auth.length === expectedBearer.length && timingSafeEqual(Buffer.from(auth), Buffer.from(expectedBearer));
-  const authed = verifySessionCookie(cookies['vc_session']) || bearerMatch;
+  const authed = verifySessionCookie(sessionVal) || bearerMatch;
   res.json({ authed });
 });
 
