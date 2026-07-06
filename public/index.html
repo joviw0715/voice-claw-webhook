@@ -1132,10 +1132,14 @@ function renderLogs(target = 'log-pane') {
     row.className = 'log-line';
     const ts = l.ts.replace('T', ' ').replace('Z', '').slice(0, 19);
     const badgeCls = l.level === 'error' ? 'badge-error' : l.level === 'warn' ? 'badge-warn' : 'badge-info';
-    let text = escHtml(l.line);
+    let text;
     if (search) {
       const re = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'gi');
-      text = text.replace(re, m => `<span class="hl">${m}</span>`);
+      text = l.line.replace(re, (m, offset, str) => `\x00${m}\x01`);
+      text = escHtml(text)
+        .replace(/\x00(.*?)\x01/g, (_,m) => `<span class="hl">${m}</span>`);
+    } else {
+      text = escHtml(l.line);
     }
     row.innerHTML = `
       <span class="log-ts">${ts}</span>

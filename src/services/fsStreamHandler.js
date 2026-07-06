@@ -10,6 +10,7 @@ import { createWriteStream, unlink, statSync } from 'fs';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import { decode as mulawDecode } from '../utils/mulaw.js';
 import { getLlmProvider, getDefaultLlmProvider } from '../providers/llm/index.js';
 import { getTtsProvider, getDefaultTtsProvider } from '../providers/tts/index.js';
 import { getSttProvider, getDefaultSttProvider } from '../providers/stt/index.js';
@@ -68,26 +69,12 @@ async function eslBroadcast(fsUuid, fileUrl) {
   });
 }
 
-// Decode a single mulaw byte to 16-bit linear PCM
-function mulawToLinear(u) {
-  u = ~u & 0xFF;
-  const sign = u & 0x80;
-  const exp  = (u >> 4) & 0x07;
-  const mant = u & 0x0F;
-  let s = ((mant << 3) + 0x84) << exp;
-  s -= 0x84;
-  return sign ? -s : s;
-}
-
 // Write mulaw chunks as PCM16 WAV so FreeSWITCH mod_http_cache can play it
 function writeMulawWavFile(mulawChunks, filename) {
   return new Promise((resolve, reject) => {
     const filePath = join(AUDIO_DIR, filename);
     const mulaw = Buffer.concat(mulawChunks);
-    const pcm = Buffer.alloc(mulaw.length * 2);
-    for (let i = 0; i < mulaw.length; i++) {
-      pcm.writeInt16LE(mulawToLinear(mulaw[i]), i * 2);
-    }
+    const pcm = mulawDecode(mulaw);
     const dataSize = pcm.length;
     const header = Buffer.alloc(44);
     header.write('RIFF', 0);

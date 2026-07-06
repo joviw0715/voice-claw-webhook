@@ -16,6 +16,28 @@ function sessionKey(phone) {
   return phone ? `agent:main:${phone.replace(/\D/g, '')}` : 'agent:main:main';
 }
 
+// Shared SSE token generator: yields delta content tokens from an axios stream response.
+async function* parseSseStream(responseData) {
+  const decoder = new StringDecoder('utf8');
+  let buf = '';
+  for await (const chunk of responseData) {
+    buf += decoder.write(chunk);
+    const lines = buf.split('\n');
+    buf = lines.pop() ?? '';
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('data:')) continue;
+      const data = trimmed.slice(5).trim();
+      if (data === '[DONE]') return;
+      try {
+        const json = JSON.parse(data);
+        const tok = json.choices?.[0]?.delta?.content;
+        if (tok) yield tok;
+      } catch { /* non-JSON SSE line */ }
+    }
+  }
+}
+
 async function callOpenClawHTTP(messages, key) {
   const baseUrl = (process.env.OPENCLAW_URL || 'https://voiceclaw.zeabur.app').replace(/\/$/, '');
   const token = process.env.OPENCLAW_TOKEN;
@@ -114,24 +136,7 @@ export async function* streamQueryOpenRouter(messages) {
     httpsAgent,
   });
 
-  const decoder = new StringDecoder('utf8');
-  let buf = '';
-  for await (const chunk of response.data) {
-    buf += decoder.write(chunk);
-    const lines = buf.split('\n');
-    buf = lines.pop() ?? '';
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith('data:')) continue;
-      const data = trimmed.slice(5).trim();
-      if (data === '[DONE]') return;
-      try {
-        const json = JSON.parse(data);
-        const tok = json.choices?.[0]?.delta?.content;
-        if (tok) yield tok;
-      } catch { /* non-JSON SSE line */ }
-    }
-  }
+  yield* parseSseStream(response.data);
 }
 // Streaming via Google Gemini — low latency (~500ms-1.5s TTFT), works globally.
 // Uses Gemini's OpenAI-compatible endpoint. Set GEMINI_API_KEY env var.
@@ -155,24 +160,7 @@ export async function* streamQueryGemini(messages) {
     },
   );
 
-  const decoder = new StringDecoder('utf8');
-  let buf = '';
-  for await (const chunk of response.data) {
-    buf += decoder.write(chunk);
-    const lines = buf.split('\n');
-    buf = lines.pop() ?? '';
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith('data:')) continue;
-      const data = trimmed.slice(5).trim();
-      if (data === '[DONE]') return;
-      try {
-        const json = JSON.parse(data);
-        const tok = json.choices?.[0]?.delta?.content;
-        if (tok) yield tok;
-      } catch { /* non-JSON SSE line */ }
-    }
-  }
+  yield* parseSseStream(response.data);
 }
 
 // Streaming via Groq — extremely low latency (~200-500ms TTFT) for chat turns.
@@ -197,24 +185,7 @@ export async function* streamQueryGroq(messages) {
     httpsAgent,
   });
 
-  const decoder = new StringDecoder('utf8');
-  let buf = '';
-  for await (const chunk of response.data) {
-    buf += decoder.write(chunk);
-    const lines = buf.split('\n');
-    buf = lines.pop() ?? '';
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith('data:')) continue;
-      const data = trimmed.slice(5).trim();
-      if (data === '[DONE]') return;
-      try {
-        const json = JSON.parse(data);
-        const tok = json.choices?.[0]?.delta?.content;
-        if (tok) yield tok;
-      } catch { /* non-JSON SSE line */ }
-    }
-  }
+  yield* parseSseStream(response.data);
 }
 export async function* streamQueryLLM(messages, phone) {
   const baseUrl = (process.env.OPENCLAW_URL || 'https://voiceclaw.zeabur.app').replace(/\/$/, '');
@@ -252,22 +223,5 @@ export async function* streamQueryLLM(messages, phone) {
   }
 
   // SSE streaming: parse data: lines and yield delta content tokens
-  const decoder = new StringDecoder('utf8');
-  let buf = '';
-  for await (const chunk of response.data) {
-    buf += decoder.write(chunk);
-    const lines = buf.split('\n');
-    buf = lines.pop() ?? '';
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith('data:')) continue;
-      const data = trimmed.slice(5).trim();
-      if (data === '[DONE]') return;
-      try {
-        const json = JSON.parse(data);
-        const tok = json.choices?.[0]?.delta?.content;
-        if (tok) yield tok;
-      } catch { /* non-JSON SSE comment line */ }
-    }
-  }
+  yield* parseSseStream(response.data);
 }

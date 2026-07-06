@@ -548,7 +548,6 @@ app.post('/admin/providers', adminAuth, async (req, res) => {
 // ── Admin: assistant config (system prompt + first message overrides) ────────
 app.get('/admin/assistant', adminAuth, async (req, res) => {
   try {
-    const { getProviderConfig } = await import('./src/services/redisClient.js');
     const cfg = await getProviderConfig();
     res.json({
       systemPrompt: cfg.systemPrompt ?? process.env.SYSTEM_PROMPT ?? SYSTEM_PROMPT,
@@ -563,7 +562,6 @@ app.get('/admin/assistant', adminAuth, async (req, res) => {
 app.post('/admin/assistant', adminAuth, async (req, res) => {
   const { systemPrompt, firstMessage, language } = req.body ?? {};
   try {
-    const { getProviderConfig, setProviderConfig } = await import('./src/services/redisClient.js');
     const current = await getProviderConfig();
     const updated = {
       ...current,
@@ -586,8 +584,6 @@ app.post('/admin/chat', adminAuth, async (req, res) => {
   const { messages, phone = 'test' } = req.body ?? {};
   if (!Array.isArray(messages)) return res.status(400).json({ error: 'messages array required' });
   try {
-    const { queryLLM } = await import('./src/services/openClawLlm.js');
-    const { getProviderConfig } = await import('./src/services/redisClient.js');
     const cfg = await getProviderConfig();
     const sysPrompt = cfg.systemPrompt || process.env.SYSTEM_PROMPT || SYSTEM_PROMPT;
     const full = [{ role: 'system', content: sysPrompt }, ...messages];
