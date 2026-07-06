@@ -1522,17 +1522,22 @@ function startCallLogPoll(sid) {
   const logEl = document.getElementById('call-log');
   logEl.innerHTML = '';
   let lastTs = null;
+  let lastTsCount = 0; // entries already seen at lastTs (dedup for same-ms batches)
   callPollTimer = setInterval(async () => {
     try {
       const url = lastTs
         ? `/admin/logs?since=${encodeURIComponent(lastTs)}`
         : `/admin/logs`;
-      const r = await fetch(url);
+      const r = await fetch(url, { credentials: 'same-origin' });
       if (!r.ok) return;
       const d = await r.json();
-      const relevant = (d.logs || []).filter(l => l.line.includes(sid));
+      // Server returns ts >= lastTs; skip entries already seen at that timestamp.
+      let allEntries = (d.logs || []);
+      if (lastTs) allEntries = allEntries.slice(lastTsCount);
+      const relevant = allEntries.filter(l => l.line.includes(sid));
       if (relevant.length) {
         lastTs = relevant[relevant.length - 1].ts;
+        lastTsCount = allEntries.filter(l => l.ts === lastTs).length;
         relevant.forEach(l => {
           const line = document.createElement('div');
           line.style.color = l.level === 'error' ? 'var(--danger)' : l.level === 'warn' ? 'var(--warn)' : 'var(--fg-muted)';

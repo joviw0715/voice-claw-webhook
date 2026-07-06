@@ -155,6 +155,7 @@ export async function createFsCallHandler(ws, req, log) {
   let ttsLastAt = 0;
   let llmAborted = false;
   let _cancelTts = null; // cancel handle for active TTS stream
+  let _sttErrorCount = 0; // consecutive STT errors — stop restarting after 5
   // Deferred ESL broadcast queue: if fsUuid is not yet known when playTts() runs,
   // stash entries here and drain all of them as soon as the UUID arrives.
   const _pendingEslPlay = [];
@@ -238,6 +239,7 @@ export async function createFsCallHandler(ws, req, log) {
           log(callSid, '🔇 STT SUPERSEDED (fs)', `dropped: "${text.slice(0, 30)}"`);
           return;
         }
+        _sttErrorCount = 0; // successful transcript — reset error counter
         if (Date.now() - ttsLastAt < 1500) {
           log(callSid, '🔇 ECHO SUPPRESSED', `"${text.slice(0, 30)}"`);
           return;
@@ -249,13 +251,19 @@ export async function createFsCallHandler(ws, req, log) {
       },
       onError(err) {
         if (stt !== thisStt) return; // superseded
-        log(callSid, '⚠ STT ERR', err.message);
-        startListening();
+        _sttErrorCount++;
+        log(callSid, '⚠ STT ERR', `${err.message} (errors=${_sttErrorCount})`);
+        if (_sttErrorCount <= 5) {
+          startListening();
+        } else {
+          log(callSid, '🚫 STT ERR LIMIT', 'too many consecutive STT errors — stopping restart loop');
+        }
       },
       onSessionEnd(reason) {
         if (stt !== thisStt) return; // superseded — don't chain-restart
         // Azure closed the session (idle timeout, service restart) — reconnect silently
         log(callSid, '🔄 STT RECONNECT', reason);
+        _sttErrorCount = 0; // session ended cleanly — reset error counter
         if (state !== 'IDLE') startListening();
       },
     });
