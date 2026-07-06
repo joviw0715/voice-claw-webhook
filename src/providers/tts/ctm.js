@@ -115,6 +115,9 @@ export async function synthesizeSpeech(text, { voiceId } = {}) {
   const filepath = path.join(AUDIO_DIR, filename);
   fs.writeFileSync(filepath, Buffer.from(response.data));
 
+  // Auto-delete after 5 minutes — enough time for Twilio to fetch and play the file
+  setTimeout(() => fs.unlink(filepath, () => {}), 5 * 60 * 1000);
+
   const baseUrl = (process.env.BASE_URL || '').replace(/\/$/, '');
   return `${baseUrl}/audio/${filename}`;
 }

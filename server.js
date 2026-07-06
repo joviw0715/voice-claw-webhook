@@ -185,7 +185,14 @@ async function processAsync(callSid, phone, userText) {
     history.push({ role: "user", content: userText });
     if (history.length > 10) history = history.slice(-10);
 
-    const systemPrompt = `${SYSTEM_PROMPT}
+    // Use Redis-stored systemPrompt if the admin has overridden it; fall back to env/constant
+    let activeSystemPrompt = SYSTEM_PROMPT;
+    try {
+      const cfg = await getProviderConfig();
+      if (cfg.systemPrompt) activeSystemPrompt = cfg.systemPrompt;
+    } catch { /* Redis unavailable — use default */ }
+
+    const systemPrompt = `${activeSystemPrompt}
 
 User memory:
 ${JSON.stringify(memory)}

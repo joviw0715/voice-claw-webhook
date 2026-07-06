@@ -1506,8 +1506,8 @@ async function makeCall() {
     st.style.color = 'var(--accent)';
     info.innerHTML = `
       <div style="font-family:var(--font-mono);font-size:12px;">
-        <div>SID: <span style="color:var(--accent2)">${d.sid}</span></div>
-        <div>Status: <span id="call-live-status" style="color:var(--accent)">${d.status}</span></div>
+        <div>SID: <span style="color:var(--accent2)">${escHtml(d.sid)}</span></div>
+        <div>Status: <span id="call-live-status" style="color:var(--accent)">${escHtml(d.status)}</span></div>
         <div>To: ${escHtml(to)}</div>
       </div>`;
     toast('📞 Call started: ' + to);
