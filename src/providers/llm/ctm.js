@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { StringDecoder } from 'string_decoder';
+import { parseSseStream } from '../../services/openClawLlm.js';
 
 export function isAvailable() {
   return !!process.env.CTM_LLM_API_KEY && process.env.USE_CTM_LLM === 'true';
@@ -36,39 +36,7 @@ export async function* stream(messages) {
     throw new Error(`CTM LLM HTTP ${status ?? 'ERR'}: ${detail}`);
   }
 
-  const decoder = new StringDecoder('utf8');
-  let buf = '';
-  for await (const chunk of response.data) {
-    buf += decoder.write(chunk);
-    const lines = buf.split('\n');
-    buf = lines.pop() ?? '';
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith('data:')) continue;
-      const data = trimmed.slice(5).trim();
-      if (data === '[DONE]') return;
-      try {
-        const json = JSON.parse(data);
-        const tok = json.choices?.[0]?.delta?.content;
-        if (tok) yield tok;
-      } catch { /* non-JSON SSE line */ }
-    }
-  }
-  // Flush any multi-byte UTF-8 sequence the decoder held across the last chunk
-  buf += decoder.end();
-  if (buf.trim()) {
-    for (const line of buf.split('\n')) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith('data:')) continue;
-      const data = trimmed.slice(5).trim();
-      if (data === '[DONE]') return;
-      try {
-        const json = JSON.parse(data);
-        const tok = json.choices?.[0]?.delta?.content;
-        if (tok) yield tok;
-      } catch { /* non-JSON SSE line */ }
-    }
-  }
+  yield* parseSseStream(response.data);
 }
 
 export async function query(messages) {

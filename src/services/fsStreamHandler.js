@@ -7,9 +7,8 @@
 // uuid_broadcast to play it back directly from the host.
 
 import { createWriteStream, unlink, statSync } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { dirname } from 'path';
 import { decode as mulawDecode } from '../utils/mulaw.js';
 import { getLlmProvider, getDefaultLlmProvider } from '../providers/llm/index.js';
 import { getTtsProvider, getDefaultTtsProvider } from '../providers/tts/index.js';

@@ -65,15 +65,10 @@ async function setConversation(callSid, messages) {
   );
 }
 
-// ✅ Compatibility wrappers (for server.js)
+// ✅ Compatibility aliases (for server.js)
 
-async function getContext(callSid) {
-  return await getConversation(callSid);
-}
-
-async function saveContext(callSid, history) {
-  return await setConversation(callSid, history);
-}
+const getContext = getConversation;
+const saveContext = setConversation;
 
 // ─────────────────────────────────────────────
 // User Memory (Phone-based)

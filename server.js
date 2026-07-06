@@ -4,6 +4,7 @@ import { WebSocketServer } from "ws";
 import { fileURLToPath } from "url";
 import path from "path";
 import { createHmac, timingSafeEqual } from "crypto";
+import axios from 'axios';
 import twilio from "twilio";
 import twilioValidation from "./src/middleware/twilioValidation.js";
 import { getContext, saveContext, getUserMemory, setResult, getResult, deleteResult, setProcessStart, getProcessStart, deleteProcessStart, getProviderConfig, setProviderConfig } from "./src/services/redisClient.js";
@@ -358,7 +359,6 @@ app.get('/admin/test-ctm-llm', adminAuth, async (req, res) => {
   }
 
   try {
-    const axios = (await import('axios')).default;
     const response = await axios.post(`${baseUrl}/chat/completions`, {
       model,
       messages: [{ role: 'user', content: '你好' }],
