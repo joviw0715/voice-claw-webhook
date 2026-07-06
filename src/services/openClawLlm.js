@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { StringDecoder } from 'string_decoder';
 import httpsAgent from '../utils/httpAgent.js';
 
 const LLM_BASE_URL = process.env.LLM_BASE_URL || 'https://openrouter.ai/api/v1/chat/completions';
@@ -18,16 +17,16 @@ function sessionKey(phone) {
 
 // Shared SSE token generator: yields delta content tokens from an axios stream response.
 export async function* parseSseStream(responseData) {
-  const decoder = new StringDecoder('utf8');
+  const decoder = new TextDecoder('utf-8');
   let buf = '';
   for await (const chunk of responseData) {
-    buf += decoder.write(chunk);
+    buf += decoder.decode(chunk, { stream: true });
     const lines = buf.split('\n');
     buf = lines.pop() ?? '';
     yield* _yieldSseLines(lines);
   }
-  // Flush any multi-byte UTF-8 sequence the decoder held across the last chunk
-  yield* _yieldSseLines((buf + decoder.end()).split('\n'));
+  // Flush any remaining bytes the decoder held across the last chunk
+  yield* _yieldSseLines((buf + decoder.decode()).split('\n'));
 }
 
 function* _yieldSseLines(lines) {

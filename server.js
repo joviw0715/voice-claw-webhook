@@ -407,22 +407,15 @@ function verifySessionCookie(cookie) {
 }
 
 function parseCookies(req) {
-  const raw = req.headers.cookie || '';
-  const result = {};
-  for (const part of raw.split(';')) {
-    const eqIdx = part.indexOf('=');
-    if (eqIdx < 0) continue;
-    const key = part.slice(0, eqIdx).trim();
-    const val = part.slice(eqIdx + 1).trim();
-    if (!key) continue;
-    try {
-      result[decodeURIComponent(key)] = decodeURIComponent(val);
-    } catch {
-      // Malformed percent-encoding — skip this cookie rather than crashing
-      result[key] = val;
-    }
-  }
-  return result;
+  return Object.fromEntries(
+    (req.headers.cookie || '').split(';').flatMap(part => {
+      const eq = part.indexOf('=');
+      if (eq < 0) return [];
+      try {
+        return [[decodeURIComponent(part.slice(0, eq).trim()), decodeURIComponent(part.slice(eq + 1).trim())]];
+      } catch { return [[part.slice(0, eq).trim(), part.slice(eq + 1).trim()]]; }
+    })
+  );
 }
 
 function adminAuth(req, res, next) {

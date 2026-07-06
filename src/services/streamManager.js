@@ -262,9 +262,9 @@ export function createCallHandler(ws, log) {
 
   // ── WebSocket helpers ────────────────────────────────────────────────────
 
-  function sendMedia(audioBuffer) {
+  function sendMedia(audioBuffer, isTts = true) {
     if (ws.readyState !== ws.OPEN) return;
-    ttsLastChunkAt = Date.now();
+    if (isTts) ttsLastChunkAt = Date.now();
     ws.send(JSON.stringify({
       event: 'media',
       streamSid,
@@ -273,14 +273,7 @@ export function createCallHandler(ws, log) {
   }
 
   // Send ambient audio without updating ttsLastChunkAt — ambient must not block STT echo suppression
-  function sendAmbient(audioBuffer) {
-    if (ws.readyState !== ws.OPEN) return;
-    ws.send(JSON.stringify({
-      event: 'media',
-      streamSid,
-      media: { payload: audioBuffer.toString('base64') },
-    }));
-  }
+  function sendAmbient(audioBuffer) { sendMedia(audioBuffer, false); }
 
   function sendClear() {
     if (ws.readyState !== ws.OPEN) return;

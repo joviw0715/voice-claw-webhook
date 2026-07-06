@@ -110,7 +110,7 @@ export async function synthesizeSpeech(text, { voiceId } = {}) {
     },
   );
 
-  if (!fs.existsSync(AUDIO_DIR)) fs.mkdirSync(AUDIO_DIR, { recursive: true });
+  fs.mkdirSync(AUDIO_DIR, { recursive: true });
   const filename = `ctm_tts_${crypto.randomUUID()}.wav`;
   const filepath = path.join(AUDIO_DIR, filename);
   fs.writeFileSync(filepath, Buffer.from(response.data));

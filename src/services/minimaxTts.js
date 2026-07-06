@@ -62,9 +62,7 @@ export async function synthesizeSpeech(text) {
 
   const audioBuffer = Buffer.from(audioHex, 'hex');
 
-  if (!fs.existsSync(AUDIO_DIR)) {
-    fs.mkdirSync(AUDIO_DIR, { recursive: true });
-  }
+  fs.mkdirSync(AUDIO_DIR, { recursive: true });
 
   const filename = `tts_${crypto.randomUUID()}.mp3`;
   const filePath = path.join(AUDIO_DIR, filename);
