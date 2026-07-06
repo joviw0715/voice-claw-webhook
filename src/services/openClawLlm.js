@@ -119,77 +119,43 @@ export function classifyIntent(userText) {
 }
 
 
-// Streaming via OpenRouter — for non-tool conversational queries where speed matters
-export async function* streamQueryOpenRouter(messages) {
-  const apiKey = process.env.LLM_API_KEY;
-  const model = process.env.LLM_MODEL || FREE_MODELS[0];
-  if (!apiKey) throw new Error('LLM_API_KEY not set');
-
-  const response = await axios.post(LLM_BASE_URL, {
-    messages,
-    model,
-    stream: true,
-  }, {
+// Shared OpenAI-compatible SSE streaming helper.
+async function* streamOpenAiCompat(url, apiKey, model, messages, timeout = 20000) {
+  const response = await axios.post(url, { messages, model, stream: true }, {
     headers: {
       'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
       'Accept': 'text/event-stream',
     },
     responseType: 'stream',
-    timeout: 20000,
+    timeout,
     httpsAgent,
   });
-
   yield* parseSseStream(response.data);
 }
-// Streaming via Google Gemini — low latency (~500ms-1.5s TTFT), works globally.
-// Uses Gemini's OpenAI-compatible endpoint. Set GEMINI_API_KEY env var.
+
+export async function* streamQueryOpenRouter(messages) {
+  const apiKey = process.env.LLM_API_KEY;
+  if (!apiKey) throw new Error('LLM_API_KEY not set');
+  yield* streamOpenAiCompat(LLM_BASE_URL, apiKey, process.env.LLM_MODEL || FREE_MODELS[0], messages);
+}
+
 export async function* streamQueryGemini(messages) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY not set');
-
-  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
-  const response = await axios.post(
-    `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`,
-    { messages, model, stream: true },
-    {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'Accept': 'text/event-stream',
-      },
-      responseType: 'stream',
-      timeout: 15000,
-      httpsAgent,
-    },
+  yield* streamOpenAiCompat(
+    'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+    apiKey, process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite', messages, 15000,
   );
-
-  yield* parseSseStream(response.data);
 }
 
-// Streaming via Groq — extremely low latency (~200-500ms TTFT) for chat turns.
-// Uses the same OpenAI-compatible API format as OpenRouter.
 export async function* streamQueryGroq(messages) {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) throw new Error('GROQ_API_KEY not set');
-
-  const model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
-  const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
-    messages,
-    model,
-    stream: true,
-  }, {
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'Accept': 'text/event-stream',
-    },
-    responseType: 'stream',
-    timeout: 15000,
-    httpsAgent,
-  });
-
-  yield* parseSseStream(response.data);
+  yield* streamOpenAiCompat(
+    'https://api.groq.com/openai/v1/chat/completions',
+    apiKey, process.env.GROQ_MODEL || 'llama-3.3-70b-versatile', messages, 15000,
+  );
 }
 export async function* streamQueryLLM(messages, phone) {
   const baseUrl = (process.env.OPENCLAW_URL || 'https://voiceclaw.zeabur.app').replace(/\/$/, '');

@@ -61,18 +61,6 @@ function log(callSid, step, detail = '') {
   console.log(`[${ts}] [${callSid}] ${step}${detail ? ' — ' + detail : ''}`);
 }
 
-function recordTwiml(audioUrl = null) {
-  const play = audioUrl ? `<Play>${audioUrl}</Play>` : '';
-  return `
-<Response>
-  ${play}
-  <Record action="${BASE_URL}/process" method="POST"
-          maxLength="30" timeout="1" playBeep="false"
-          trim="trim-silence" />
-  <Redirect>${BASE_URL}/voice</Redirect>
-</Response>`.trim();
-}
-
 // Tracks callSids we've already set up to detect Twilio webhook retries.
 // On retry: skip the greeting but still return stream TwiML so the stream can reconnect.
 const recentCalls = new Map(); // callSid → timestamp
@@ -329,7 +317,13 @@ app.post("/poll/:callSid", twilioValidation, async (req, res) => {
   const ttsReadyAt = new Date().toISOString();
   log(callSid, '📤 POLL   ready, sending audio', `${audioUrl}${e2eMs !== null ? ` — e2e=${e2eMs}ms (user finished speaking → audio ready @ ${ttsReadyAt}; add ~1s Twilio playback buffer for real perceived latency)` : ''}`);
   res.type("text/xml");
-  res.send(recordTwiml(audioUrl));
+  res.send(`<Response>
+  <Play>${audioUrl}</Play>
+  <Record action="${BASE_URL}/process" method="POST"
+          maxLength="30" timeout="1" playBeep="false"
+          trim="trim-silence" />
+  <Redirect>${BASE_URL}/voice</Redirect>
+</Response>`);
 });
 
 process.on('uncaughtException', (err) => {
@@ -380,7 +374,7 @@ const VALID_TTS = ['auto', 'ctm', 'minimax'];
 const VALID_STT = ['auto', 'ctm', 'azure'];
 
 // Shared auth token and session cookie helpers
-const getServerToken = () => process.env.CONSOLE_API_TOKEN || process.env.SESSION_SECRET || '';
+const getServerToken = () => process.env.CONSOLE_API_TOKEN || '';
 const getSessionCookie = (req) => (req.headers.cookie || '').split(';').find(p => p.trim().startsWith('vc_session='))?.split('=').slice(1).join('=');
 
 // Signed session cookie using HMAC-SHA256.
