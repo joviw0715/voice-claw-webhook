@@ -19,9 +19,6 @@ const { Connection: EslConnection } = modesl;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const AUDIO_DIR = join(__dirname, '../../audio');
-// Use the public Zeabur URL for audio, not the nginx proxy
-// FS_BASE_URL points to nginx for WebSocket, but audio must be fetched from Zeabur directly
-const AUDIO_BASE_URL = (process.env.AUDIO_BASE_URL || process.env.BASE_URL || '').replace(/\/$/, '');
 const BASE_URL = (process.env.FS_BASE_URL || process.env.BASE_URL || '').replace(/\/$/, '');
 
 console.log('[fs-stream] AUDIO_DIR:', AUDIO_DIR, 'BASE_URL:', BASE_URL);

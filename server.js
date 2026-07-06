@@ -481,7 +481,7 @@ app.get('/admin/stats', adminAuth, (req, res) => {
       const ms = parseMs(line); if (ms) ttsTimes.push(ms);
     }
     if (line.includes('ASYNC DONE')) {
-      const ms = parseTotalMs(line); if (ms) { totalTimes.push(ms); callCount++; }
+      const ms = parseTotalMs(line); if (ms) totalTimes.push(ms);
     }
     if (line.includes('CALL STARTED') || line.includes('OUTBOUND CALL INITIATED')) callCount++;
   }

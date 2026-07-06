@@ -743,7 +743,7 @@ export function createCallHandler(ws, log) {
         });
         } else {
         // Inbound: load user memory + wait for providers before greeting
-        Promise.all([getUserMemory(phone), _providersReady]).then(([memory]) => {
+        Promise.all([getUserMemory(phone).catch(() => null), _providersReady]).then(([memory]) => {
             const name = memory?.name;
             const greetingText = paramGreetingText || (name
               ? `你好呀${name}，我係祖兒呀，你今日點呀？`
@@ -762,20 +762,8 @@ export function createCallHandler(ws, log) {
               onError(err) { log(callSid, '⚠ GREETING ERR', err.message); startListening(); },
             });
           }).catch(err => {
-            log(callSid, '⚠ GREETING MEM ERR', err.message);
-            const greetingText = paramGreetingText || process.env.FIRST_MESSAGE || '你好，我係祖兒呀，請問點稱呼你呀？';
-            const ttsForGreeting = _ttsProvider ?? getTtsProvider('minimax');
-            state = 'SPEAKING';
-            ttsForGreeting.synthesizeToStream(greetingText, {
-              voiceId,
-              onChunk(buf) { sendMedia(buf); },
-              onDone() {
-                ttsEndedAt = Date.now();
-                saveContext(callSid, [{ role: 'assistant', content: greetingText }]).catch(() => {});
-                startListening();
-              },
-              onError(err2) { log(callSid, '⚠ GREETING ERR', err2.message); startListening(); },
-            });
+            log(callSid, '⚠ GREETING ERR', err.message);
+            startListening();
           });
         }
         return;
