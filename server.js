@@ -122,10 +122,8 @@ app.post("/voice", twilioValidation, (req, res) => {
   const now = Date.now();
   const isRetry = recentCalls.has(callSid);
   recentCalls.set(callSid, now);
-  if (recentCalls.size > 200) {
-    for (const [sid, ts] of recentCalls) {
-      if (now - ts > 120000) recentCalls.delete(sid);
-    }
+  for (const [sid, ts] of recentCalls) {
+    if (now - ts > 120000) recentCalls.delete(sid);
   }
 
   if (isRetry) {
@@ -497,8 +495,8 @@ app.get('/admin/stats', adminAuth, (req, res) => {
       tts:   { avg: avg(ttsTimes),   p95: p95(ttsTimes),   samples: ttsTimes.length },
       total: { avg: avg(totalTimes), p95: p95(totalTimes), samples: totalTimes.length },
     },
-    errors: logBuffer.reduce((n, l) => n + (l.level === 'error' ? 1 : 0), 0),
-    warnings: logBuffer.reduce((n, l) => n + (l.level === 'warn' ? 1 : 0), 0),
+    errors: logBuffer.filter(l => l.level === 'error').length,
+    warnings: logBuffer.filter(l => l.level === 'warn').length,
     logCount: logBuffer.length,
   });
 });

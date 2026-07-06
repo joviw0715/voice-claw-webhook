@@ -29,11 +29,20 @@ function isValidUuid(uuid) {
   return typeof uuid === 'string' && /^[0-9a-f-]{1,64}$/i.test(uuid);
 }
 
+// Shell-safe validator for env-var values that flow into ESL system/curl commands.
+// Allows only URL-safe and path chars; rejects shell metacharacters.
+function isShellSafe(str) {
+  return typeof str === 'string' && /^[A-Za-z0-9_./:@%?=&+-]*$/.test(str);
+}
+
 async function eslBroadcast(fsUuid, fileUrl) {
   const eslHost = process.env.FS_ESL_HOST || '127.0.0.1';
   const eslPort = parseInt(process.env.FS_ESL_PORT || '8021');
   const eslPass = process.env.FS_ESL_PASSWORD || 'CHANGEME_ESL_PASS';
   const fsAudioDir = process.env.FS_AUDIO_DIR || '/tmp';
+
+  if (!isShellSafe(fileUrl)) throw new Error(`eslBroadcast: unsafe fileUrl rejected: "${fileUrl}"`);
+  if (!isShellSafe(fsAudioDir)) throw new Error(`eslBroadcast: unsafe FS_AUDIO_DIR rejected: "${fsAudioDir}"`);
 
   return new Promise((resolve, reject) => {
     let settled = false;
