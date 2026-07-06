@@ -25,7 +25,7 @@ const _origErr = console.error.bind(console);
 const _origWarn = console.warn.bind(console);
 
 function captureLog(level, args) {
-  const line = args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
+  const line = args.map(a => (a instanceof Error ? a.stack || a.message : typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
   logBuffer.push({ ts: new Date().toISOString(), level, line });
   if (logBuffer.length > LOG_BUFFER_MAX) logBuffer.shift();
 }

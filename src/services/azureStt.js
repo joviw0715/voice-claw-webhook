@@ -1,8 +1,5 @@
 import sdk from 'microsoft-cognitiveservices-speech-sdk';
 import axios from 'axios';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
 import httpsAgent from '../utils/httpAgent.js';
 
 /**
@@ -39,10 +36,7 @@ export async function transcribeAudio(recordingUrl) {
   }
 
   const safeUrl = validateTwilioRecordingUrl(recordingUrl);
-
   const wavUrl = safeUrl.endsWith('.wav') ? safeUrl : `${safeUrl}.wav`;
-
-  const tmpFile = path.join(os.tmpdir(), `twilio_${Date.now()}.wav`);
 
   const response = await axios.get(wavUrl, {
     responseType: 'arraybuffer',
@@ -54,31 +48,20 @@ export async function transcribeAudio(recordingUrl) {
     },
   });
 
-  fs.writeFileSync(tmpFile, Buffer.from(response.data));
-
-  try {
-    return await recognizeFromFile(speechKey, speechRegion, tmpFile);
-  } finally {
-    fs.unlink(tmpFile, () => {});
-  }
+  return recognizeFromBuffer(speechKey, speechRegion, Buffer.from(response.data));
 }
 
 /**
  * Azure STT
  */
-function recognizeFromFile(key, region, filePath) {
+function recognizeFromBuffer(key, region, wavBuffer) {
   return new Promise((resolve, reject) => {
     const speechConfig = sdk.SpeechConfig.fromSubscription(key, region);
     speechConfig.speechRecognitionLanguage = process.env.AZURE_SPEECH_LANGUAGE || 'zh-HK';
 
-    const audioConfig = sdk.AudioConfig.fromWavFileInput(
-      fs.readFileSync(filePath)
-    );
+    const audioConfig = sdk.AudioConfig.fromWavFileInput(wavBuffer);
 
-    const recognizer = new sdk.SpeechRecognizer(
-      speechConfig,
-      audioConfig
-    );
+    const recognizer = new sdk.SpeechRecognizer(speechConfig, audioConfig);
 
     recognizer.recognizeOnceAsync(
       (result) => {
