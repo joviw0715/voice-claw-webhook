@@ -456,11 +456,11 @@ export function createCallHandler(ws, log) {
     }, 90000);
 
     try {
-      // Load context + RAG in parallel
-      const [history, memory, intent, ragChunks] = await Promise.all([
+      // Load context + RAG in parallel; classifyIntent is sync so run it immediately
+      const intent = classifyIntent(userText);
+      const [history, memory, ragChunks] = await Promise.all([
         getContext(callSid),
         getUserMemory(phone),
-        classifyIntent(userText),
         retrieveKnowledge(userText, 3, qdrantCollection),
       ]);
       log(callSid, '📚 CONTEXT', `history=${history.length} knowledge=${hotlineKnowledge.length > 0 ? 'yes' : 'none'} rag=${ragChunks.length} intent=${intent} (${Date.now() - t0}ms)`);

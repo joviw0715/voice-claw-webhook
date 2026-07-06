@@ -53,8 +53,8 @@ async function setConversation(callSid, messages) {
 
 // ✅ Compatibility aliases (for server.js)
 
-const getContext = getConversation;
-const saveContext = setConversation;
+export const getContext = getConversation;
+export const saveContext = setConversation;
 
 // ─────────────────────────────────────────────
 // User Memory (Phone-based)
@@ -169,10 +169,6 @@ async function setProviderConfig(config) {
 
 
 export {
-  getConversation,
-  setConversation,
-  getContext,
-  saveContext,
   getUserMemory,
   updateUserMemory,
   setResult,

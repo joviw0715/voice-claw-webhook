@@ -6,7 +6,7 @@
 // Workaround: write TTS audio as a .ulaw file served over HTTP, then use FreeSWITCH ESL
 // uuid_broadcast to play it back directly from the host.
 
-import { createWriteStream, unlink, statSync } from 'fs';
+import { createWriteStream, unlink } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { decode as mulawDecode } from '../utils/mulaw.js';
@@ -141,8 +141,6 @@ export async function createFsCallHandler(ws, req, log) {
       // Use BASE_URL (nginx proxy on FreeSWITCH host) for audio — plain HTTP
       const fileUrl = `${BASE_URL}/audio/${filename}`;
       log(callSid, '🔊 ESL PLAY', fileUrl);
-      const stat = statSync(join(AUDIO_DIR, filename));
-      log(callSid, '📁 FILE SIZE', `${stat.size} bytes`);
       await eslBroadcast(fsUuid, fileUrl);
     } catch (err) {
       log(callSid, '⚠ ESL ERR', err.message);
@@ -260,8 +258,7 @@ export async function createFsCallHandler(ws, req, log) {
     let ttsBuffer = '';
     state = 'SPEAKING';
 
-    const geminiDirect = process.env.USE_GEMINI_DIRECT === 'true';
-    const llmStream = geminiDirect ? llmProv.stream(messages) : llmProv.stream(messages, phone);
+    const llmStream = llmProv.stream(messages, phone);
 
     try {
       for await (const token of llmStream) {
