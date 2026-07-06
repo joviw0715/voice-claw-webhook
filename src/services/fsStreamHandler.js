@@ -193,6 +193,7 @@ export async function createFsCallHandler(ws, req, log) {
   function interrupt(reason) {
     if (state === 'SPEAKING' || state === 'THINKING') {
       log(callSid, '🔇 INTERRUPT', reason);
+      _cancelTts?.(); _cancelTts = null;
       llmAborted = true;
       state = 'LISTENING';
     }

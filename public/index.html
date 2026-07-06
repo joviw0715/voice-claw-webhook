@@ -1206,6 +1206,7 @@ function fmtMs(ms) { return ms === null ? '—' : ms >= 1000 ? (ms/1000).toFixed
 async function loadStats() {
   try {
     const r = await fetch(`${API}/admin/stats`);
+    if (r.status === 401) { showLoginModal(); return; }
     if (!r.ok) return;
     const d = await r.json();
 
