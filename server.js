@@ -380,7 +380,7 @@ const VALID_TTS = ['auto', 'ctm', 'minimax'];
 const VALID_STT = ['auto', 'ctm', 'azure'];
 
 // Shared auth token and session cookie helpers
-const getServerToken = () => getServerToken();
+const getServerToken = () => process.env.CONSOLE_API_TOKEN || process.env.SESSION_SECRET || '';
 const getSessionCookie = (req) => (req.headers.cookie || '').split(';').find(p => p.trim().startsWith('vc_session='))?.split('=').slice(1).join('=');
 
 // Signed session cookie using HMAC-SHA256.
