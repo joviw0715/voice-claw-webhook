@@ -617,19 +617,26 @@ function buildTranscript(history) {
 
   function speakSentence(text) {
     return new Promise((resolve) => {
+      let firstChunk = false;
       const handle = (_ttsProvider ?? getTtsProvider('minimax')).synthesizeToStream(text, {
         voiceId,
-        onChunk(buf) { if (!llmAborted) sendMedia(buf); },
-        onDone() { clearTimeout(hangGuard); cancelTts = null; resolve(); },
-        onError(err) { clearTimeout(hangGuard); log(callSid, '⚠  TTS ERR', err.message); cancelTts = null; resolve(); },
+        onChunk(buf) {
+          if (!llmAborted) sendMedia(buf);
+          // Resolve as soon as first audio chunk arrives so the LLM loop can
+          // queue the next TTS request while this one is still streaming.
+          // This pipelines TTS calls and eliminates inter-sentence silence gaps.
+          if (!firstChunk) { firstChunk = true; resolve(); }
+        },
+        onDone() { clearTimeout(hangGuard); cancelTts = null; if (!firstChunk) { firstChunk = true; resolve(); } },
+        onError(err) { clearTimeout(hangGuard); log(callSid, '⚠  TTS ERR', err.message); cancelTts = null; if (!firstChunk) resolve(); },
       });
-      cancelTts = () => { clearTimeout(hangGuard); handle.cancel(); resolve(); };
+      cancelTts = () => { clearTimeout(hangGuard); handle.cancel(); if (!firstChunk) { firstChunk = true; resolve(); } };
       // Safety net: if MiniMax stream hangs with no response, resolve after 45s
       const hangGuard = setTimeout(() => {
         log(callSid, '⚠  TTS HANG', 'no response in 45s — aborting sentence');
         handle.cancel();
         cancelTts = null;
-        resolve();
+        if (!firstChunk) { firstChunk = true; resolve(); }
       }, 45000);
     });
   }
