@@ -707,8 +707,17 @@ function buildTranscript(history) {
         if (llmAborted) return;
         if (isStreamingTts && _isCurrentEntry(entry)) {
           // MiniMax + current sentence: stream directly to Twilio (fast path)
+          // Split into 160-byte frames (20ms @ 8kHz μ-law) so Twilio's buffer
+          // doesn't overflow when CTM sends large bursts.
           entry.streamed = true;
-          sendMedia(buf);
+          if (!entry._firstChunkLogged) {
+            entry._firstChunkLogged = true;
+            log(callSid, '🎵 TTS FIRST CHUNK', `size=${buf.length} provider=${activeTts.__name}`);
+          }
+          const FRAME = 160;
+          for (let i = 0; i < buf.length; i += FRAME) {
+            sendMedia(buf.subarray(i, i + FRAME));
+          }
         } else {
           // Batch TTS or MiniMax queued behind another sentence: buffer for later
           entry.chunks.push(buf);
