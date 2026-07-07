@@ -146,7 +146,6 @@ async function getProviderConfig() {
   const raw = await getClient().get(PROVIDER_CONFIG_KEY);
   if (raw) {
     try { return JSON.parse(raw); } catch {
-      // Corrupted entry — remove it so future calls don't keep hitting the console
       await getClient().del(PROVIDER_CONFIG_KEY).catch(() => {});
     }
   }
@@ -154,15 +153,16 @@ async function getProviderConfig() {
   // Redis miss — fetch from business console DB (source of truth)
   const config = await fetchProviderConfigFromConsole();
   if (config) {
-    // Re-populate Redis cache
-    await getClient().set(PROVIDER_CONFIG_KEY, JSON.stringify(config));
+    // 60s TTL: ensures UI changes propagate within one minute even if sync POST fails
+    await getClient().setex(PROVIDER_CONFIG_KEY, 60, JSON.stringify(config));
     console.log('[providers] rehydrated Redis from console DB:', config);
   }
   return config ?? {};
 }
 
 async function setProviderConfig(config) {
-  await getClient().set(PROVIDER_CONFIG_KEY, JSON.stringify(config));
+  // 60s TTL matches getProviderConfig so synced values also expire and re-read from DB
+  await getClient().setex(PROVIDER_CONFIG_KEY, 60, JSON.stringify(config));
 }
 
 // ─────────────────────────────────────────────
