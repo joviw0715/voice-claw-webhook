@@ -168,6 +168,8 @@ export function createCallHandler(ws, log) {
     llmAborted = true;
     cancelTts?.();
     cancelTts = null;
+    _ttsQueue = [];
+    _ttsPlaying = false;
     if (ambientTimer) { clearInterval(ambientTimer); ambientTimer = null; }
     activeStreams.delete(callSid);
   }
@@ -616,36 +618,61 @@ function buildTranscript(history) {
     }
   }
 
+  // Pre-buffer queue: each entry is { chunks: Buffer[], done: bool }
+  // While sentence N plays, sentence N+1 synthesizes into a buffer.
+  // When N finishes, N+1's buffered audio flushes instantly — zero gap.
+  let _ttsQueue = [];
+  let _ttsPlaying = false;
+
+  async function _flushNextSentence() {
+    if (_ttsPlaying || _ttsQueue.length === 0) return;
+    const entry = _ttsQueue[0];
+    // Wait until synthesis is done before playing (ensures complete audio)
+    if (!entry.done) return;
+    _ttsPlaying = true;
+    _ttsQueue.shift();
+    for (const buf of entry.chunks) {
+      if (llmAborted) break;
+      sendMedia(buf);
+    }
+    ttsEndedAt = Date.now();
+    _ttsPlaying = false;
+    entry.resolve();
+    // Play next buffered sentence immediately
+    _flushNextSentence();
+  }
+
   function speakSentence(text) {
     const activeTts = _ttsProvider ?? getTtsProvider('minimax');
-    // Pipeline (resolve on first chunk) only works for true streaming TTS like MiniMax.
-    // Batch TTS (CTM) generates all audio first then fires chunks in a burst —
-    // pipelining causes overlap because sentence 2 starts while sentence 1 is mid-burst.
-    const isStreamingTts = activeTts.__name === 'minimax';
+    const entry = { chunks: [], done: false, resolve: null };
+    const promise = new Promise((resolve) => { entry.resolve = resolve; });
+    _ttsQueue.push(entry);
 
-    return new Promise((resolve) => {
-      let resolved = false;
-      const done = () => { if (!resolved) { resolved = true; resolve(); } };
+    let resolved = false;
+    const done = () => { if (!resolved) { resolved = true; entry.done = true; _flushNextSentence(); } };
 
-      const handle = activeTts.synthesizeToStream(text, {
-        voiceId,
-        onChunk(buf) {
-          if (!llmAborted) sendMedia(buf);
-          // For streaming TTS: pipeline by resolving on first chunk.
-          // For batch TTS: wait for onDone to avoid overlapping audio bursts.
-          if (isStreamingTts) done();
-        },
-        onDone() { clearTimeout(hangGuard); done(); },
-        onError(err) { clearTimeout(hangGuard); log(callSid, '⚠  TTS ERR', err.message); done(); },
-      });
-      const prevCancel = cancelTts;
-      cancelTts = () => { clearTimeout(hangGuard); prevCancel?.(); handle.cancel(); done(); };
-      const hangGuard = setTimeout(() => {
-        log(callSid, '⚠  TTS HANG', 'no response in 45s — aborting sentence');
-        handle.cancel();
-        done();
-      }, 45000);
+    const handle = activeTts.synthesizeToStream(text, {
+      voiceId,
+      onChunk(buf) { if (!llmAborted) entry.chunks.push(buf); },
+      onDone() { clearTimeout(hangGuard); done(); },
+      onError(err) { clearTimeout(hangGuard); log(callSid, '⚠  TTS ERR', err.message); done(); },
     });
+    const prevCancel = cancelTts;
+    cancelTts = () => {
+      clearTimeout(hangGuard);
+      prevCancel?.();
+      handle.cancel();
+      _ttsQueue = [];
+      _ttsPlaying = false;
+      done();
+    };
+    const hangGuard = setTimeout(() => {
+      log(callSid, '⚠  TTS HANG', 'no response in 45s — aborting sentence');
+      handle.cancel();
+      done();
+    }, 45000);
+
+    return promise;
   }
 
   // ── Public interface ─────────────────────────────────────────────────────

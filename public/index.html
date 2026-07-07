@@ -1082,6 +1082,7 @@ async function loadAllLogs() {
     }
     renderLogs();
     renderLogs('overview-log');
+  } catch (e) { toast('Failed to load logs: ' + e.message, 'err'); }
 }
 
 async function loadNewLogs() {
