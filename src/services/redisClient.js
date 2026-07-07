@@ -143,7 +143,8 @@ async function fetchProviderConfigFromConsole() {
 }
 
 async function getProviderConfig() {
-  // Provider selection (llm/tts/stt) — 60s TTL, synced from business-console DB
+  // Provider selection (llm/tts/stt) — synced from business-console via POST on every save.
+  // TTL is a fallback only; the sync POST handles instant propagation.
   const raw = await getClient().get(PROVIDER_CONFIG_KEY);
   let providers = {};
   if (raw) {
@@ -152,11 +153,10 @@ async function getProviderConfig() {
     }
   }
   if (!raw) {
-    // Redis miss — fetch from business console DB (source of truth)
+    // Redis miss — try to rehydrate from business console DB
     const config = await fetchProviderConfigFromConsole();
     if (config) {
-      // 60s TTL: ensures UI changes propagate within one minute even if sync POST fails
-      await getClient().setex(PROVIDER_CONFIG_KEY, 60, JSON.stringify(config));
+      await getClient().setex(PROVIDER_CONFIG_KEY, 3600, JSON.stringify(config));
       console.log('[providers] rehydrated Redis from console DB:', config);
       providers = config;
     }
@@ -176,8 +176,8 @@ async function getProviderConfig() {
 
 async function setProviderConfig(config) {
   const { systemPrompt, firstMessage, language, ...providers } = config;
-  // Provider selection: 60s TTL (synced from DB)
-  await getClient().setex(PROVIDER_CONFIG_KEY, 60, JSON.stringify(providers));
+  // Provider selection: 1hr TTL (instant update via sync POST; TTL is just eviction backstop)
+  await getClient().setex(PROVIDER_CONFIG_KEY, 3600, JSON.stringify(providers));
   // Assistant config: no TTL (local-only, not backed by DB)
   const assistant = { ...(systemPrompt !== undefined && { systemPrompt }), ...(firstMessage !== undefined && { firstMessage }), ...(language !== undefined && { language }) };
   if (Object.keys(assistant).length > 0) {
