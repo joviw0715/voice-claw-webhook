@@ -147,6 +147,7 @@ export function createCallHandler(ws, log) {
   let llmAborted = false;
   let ttsEndedAt = 0;
   let ttsLastChunkAt = 0;
+  let greetingEndedAt = 0; // set after greeting completes; suppresses STT for 4s
   let ambientTimer = null; // continuous background audio loop
   let callerGender = 'unknown'; // detected from first utterance pitch analysis
   let firstUtterancePcm = []; // PCM chunks collected until first gender detection
@@ -350,6 +351,11 @@ function buildTranscript(history) {
           return;
         }
         log(callSid, '👂 STT', `"${text}"`);
+        // Suppress first STT result after greeting for 4s (covers CTM batch processing lag)
+        if (greetingEndedAt > 0 && Date.now() - greetingEndedAt < 4000) {
+          log(callSid, '🔇 ECHO SUPPRESSED', `(post-greeting, ${Date.now() - greetingEndedAt}ms)`);
+          return;
+        }
         if (state === 'LISTENING' && text.trim().length >= 2) {
           // Run gender detection on first utterance only (once per call)
           if (firstUtterancePcm !== null && firstUtterancePcm.length > 0) {
@@ -359,6 +365,7 @@ function buildTranscript(history) {
             callerGender = result.gender;
             log(callSid, '🎙️  GENDER', `detected=${result.gender} hz=${result.hz} rms=${result.rms} corr=${result.corr} reason=${result.reason} (${pcmBuffer.length} bytes)`);
           }
+          greetingEndedAt = 0; // clear so subsequent turns use normal suppression
           handleUserSpeech(text.trim());
         }
       },
@@ -812,8 +819,10 @@ function buildTranscript(history) {
 
           // Delay so Twilio finishes playing the last audio chunk and CTM STT drains
           // any buffered audio before we start accepting caller input.
+          // Set ttsEndedAt AFTER delay so the 2s suppression window starts from now.
           await new Promise(r => setTimeout(r, 2000));
           ttsEndedAt = Date.now();
+          greetingEndedAt = Date.now();
           log(callSid, '✅ GREETING DONE', 'TTS complete — starting STT');
           saveContext(callSid, [{ role: 'assistant', content: greetingText }]).catch(() => {});
           startListening();
