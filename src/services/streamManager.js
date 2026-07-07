@@ -617,25 +617,33 @@ function buildTranscript(history) {
   }
 
   function speakSentence(text) {
+    const activeTts = _ttsProvider ?? getTtsProvider('minimax');
+    // Pipeline (resolve on first chunk) only works for true streaming TTS like MiniMax.
+    // Batch TTS (CTM) generates all audio first then fires chunks in a burst —
+    // pipelining causes overlap because sentence 2 starts while sentence 1 is mid-burst.
+    const isStreamingTts = activeTts.__name === 'minimax';
+
     return new Promise((resolve) => {
-      let firstChunk = false;
-      const handle = (_ttsProvider ?? getTtsProvider('minimax')).synthesizeToStream(text, {
+      let resolved = false;
+      const done = () => { if (!resolved) { resolved = true; resolve(); } };
+
+      const handle = activeTts.synthesizeToStream(text, {
         voiceId,
         onChunk(buf) {
           if (!llmAborted) sendMedia(buf);
-          // Resolve on first chunk so next TTS request starts while this streams (pipelining).
-          if (!firstChunk) { firstChunk = true; resolve(); }
+          // For streaming TTS: pipeline by resolving on first chunk.
+          // For batch TTS: wait for onDone to avoid overlapping audio bursts.
+          if (isStreamingTts) done();
         },
-        onDone() { clearTimeout(hangGuard); if (!firstChunk) { firstChunk = true; resolve(); } },
-        onError(err) { clearTimeout(hangGuard); log(callSid, '⚠  TTS ERR', err.message); if (!firstChunk) resolve(); },
+        onDone() { clearTimeout(hangGuard); done(); },
+        onError(err) { clearTimeout(hangGuard); log(callSid, '⚠  TTS ERR', err.message); done(); },
       });
-      // Chain cancel: if a previous sentence is still streaming, cancel it too
       const prevCancel = cancelTts;
-      cancelTts = () => { clearTimeout(hangGuard); prevCancel?.(); handle.cancel(); if (!firstChunk) { firstChunk = true; resolve(); } };
+      cancelTts = () => { clearTimeout(hangGuard); prevCancel?.(); handle.cancel(); done(); };
       const hangGuard = setTimeout(() => {
         log(callSid, '⚠  TTS HANG', 'no response in 45s — aborting sentence');
         handle.cancel();
-        if (!firstChunk) { firstChunk = true; resolve(); }
+        done();
       }, 45000);
     });
   }
@@ -711,41 +719,25 @@ function buildTranscript(history) {
             greetingText = process.env.FIRST_MESSAGE || '你好，請問係咪方便聽電話？';
           }
         // Await provider resolution so greeting uses the configured TTS, not the fallback
-        _providersReady.then(() => {
+        _providersReady.then(async () => {
           const ttsForGreeting = _ttsProvider ?? getTtsProvider('minimax');
           state = 'SPEAKING';
           log(callSid, '🔊 GREETING', `"${greetingText}" voice=${voiceId}`);
-          ttsForGreeting.synthesizeToStream(greetingText, {
-            voiceId,
-            onChunk(buf) { sendMedia(buf); },
-            onDone() {
-              ttsEndedAt = Date.now();
-              log(callSid, '✅ GREETING DONE', 'TTS complete — starting STT');
-              // Seed greeting as assistant turn so LLM doesn't repeat the opening
-              saveContext(callSid, [{ role: 'assistant', content: greetingText }]).catch(() => {});
-              startListening();
-            },
-            onError(err) {
-              log(callSid, '⚠ GREETING ERR', `voice=${voiceId} err=${err.message}`);
-              // Retry with default MiniMax voice (hardcoded fallback, not _ttsProvider)
-              const fallbackVoice = process.env.MINIMAX_VOICE_ID || 'Cantonese_GentleLady';
-              if (voiceId !== fallbackVoice) {
-                log(callSid, '🔊 GREETING RETRY', `falling back to voice=${fallbackVoice}`);
-                getTtsProvider('minimax').synthesizeToStream(greetingText, {
-                  voiceId: fallbackVoice,
-                  onChunk(buf) { sendMedia(buf); },
-                  onDone() {
-                    ttsEndedAt = Date.now();
-                    saveContext(callSid, [{ role: 'assistant', content: greetingText }]).catch(() => {});
-                    startListening();
-                  },
-                  onError(err2) { log(callSid, '⚠ GREETING FALLBACK ERR', err2.message); startListening(); },
-                });
-              } else {
-                startListening();
-              }
-            },
-          });
+
+          // Split long greetings at sentence boundaries so CTM TTS (batch mode)
+          // starts playing the first sentence quickly instead of synthesizing all 17s upfront
+          const greetingParts = greetingText.split(/(?<=[。？！，])\s*/).filter(p => p.trim().length >= 2);
+          const parts = greetingParts.length > 1 ? greetingParts : [greetingText];
+
+          for (const part of parts) {
+            if (llmAborted) break;
+            await speakSentence(part);
+          }
+
+          ttsEndedAt = Date.now();
+          log(callSid, '✅ GREETING DONE', 'TTS complete — starting STT');
+          saveContext(callSid, [{ role: 'assistant', content: greetingText }]).catch(() => {});
+          startListening();
         }).catch(err => {
           log(callSid, '⚠ GREETING PROVIDER ERR', err.message);
           startListening();
