@@ -135,8 +135,8 @@ async function* streamOpenAiCompat(url, apiKey, model, messages, timeout = 20000
 }
 
 export async function* streamQueryOpenRouter(messages) {
-  const apiKey = process.env.LLM_API_KEY;
-  if (!apiKey) throw new Error('LLM_API_KEY not set');
+  const apiKey = process.env.LLM_API_KEY || process.env.OPENROUTER_API_KEY;
+  if (!apiKey) throw new Error('LLM_API_KEY (or OPENROUTER_API_KEY) not set');
   yield* streamOpenAiCompat(LLM_BASE_URL, apiKey, process.env.LLM_MODEL || FREE_MODELS[0], messages);
 }
 
