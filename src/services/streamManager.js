@@ -639,7 +639,8 @@ function buildTranscript(history) {
     if (entry.streamed && entry.chunks.length === 0) {
       // MiniMax: all chunks were sent live, nothing buffered — just resolve
       _ttsQueue.shift();
-      ttsEndedAt = Date.now();
+      // Only mark TTS ended when there are no more sentences queued
+      if (_ttsQueue.length === 0) ttsEndedAt = Date.now();
       entry.resolve();
       _flushNextSentence();
       return;
@@ -651,7 +652,8 @@ function buildTranscript(history) {
       if (llmAborted) break;
       sendMedia(buf);
     }
-    ttsEndedAt = Date.now();
+    // Only mark TTS ended when there are no more sentences queued
+    if (_ttsQueue.length === 0) ttsEndedAt = Date.now();
     _ttsPlaying = false;
     entry.resolve();
     _flushNextSentence();
