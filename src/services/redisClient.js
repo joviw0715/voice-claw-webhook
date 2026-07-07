@@ -164,7 +164,7 @@ async function getProviderConfig() {
     // Redis miss or corrupt — try to rehydrate from business console DB
     const config = await fetchProviderConfigFromConsole();
     if (config) {
-      await getClient().setex(PROVIDER_CONFIG_KEY, 3600, JSON.stringify(config));
+      await getClient().setex(PROVIDER_CONFIG_KEY, 86400, JSON.stringify(config));
       console.log('[providers] rehydrated Redis from console DB:', config);
       providers = config;
     }
@@ -185,7 +185,7 @@ async function getProviderConfig() {
 async function setProviderConfig(config) {
   const { systemPrompt, firstMessage, language, ...providers } = config;
   // Provider selection: 1hr TTL (instant update via sync POST; TTL is just eviction backstop)
-  await getClient().setex(PROVIDER_CONFIG_KEY, 3600, JSON.stringify(providers));
+  await getClient().setex(PROVIDER_CONFIG_KEY, 86400, JSON.stringify(providers));
   // Assistant config: no TTL (local-only, not backed by DB)
   const assistant = { ...(systemPrompt !== undefined && { systemPrompt }), ...(firstMessage !== undefined && { firstMessage }), ...(language !== undefined && { language }) };
   if (Object.keys(assistant).length > 0) {
