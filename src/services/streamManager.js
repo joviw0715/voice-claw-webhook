@@ -502,6 +502,7 @@ function buildTranscript(history) {
         await speakSentence(filler);
       }
 
+      let lastExtracted = ''; // dedup: skip if same Chinese suffix extracted twice in a row
       for await (const tok of llmStream) {
         if (llmAborted) break;
         if (firstToken) {
@@ -520,7 +521,8 @@ function buildTranscript(history) {
               // Only filter thinking tokens for models that produce chain-of-thought (Gemini/Groq)
               if ((activeLlm.__name === 'gemini' || activeLlm.__name === 'groq') && isThinkingText(sentence)) {
                 const chinese = extractChineseSuffix(sentence);
-                if (chinese && !isThinkingText(chinese)) {
+                if (chinese && !isThinkingText(chinese) && chinese !== lastExtracted) {
+                  lastExtracted = chinese;
                   log(callSid, '🔕 EXTRACT FROM THINKING', `"${chinese.slice(0, 40)}"`);
                   // fall through with extracted Chinese portion
                   const extracted = chinese;
