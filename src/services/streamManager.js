@@ -345,7 +345,7 @@ function buildTranscript(history) {
           log(callSid, '🔇 ECHO SUPPRESSED', `(tts speaking, no recent chunk)`);
           return;
         }
-        if (ttsEndedAt > 0 && sinceEnded < 800) {
+        if (ttsEndedAt > 0 && sinceEnded < 2000) {
           log(callSid, '🔇 ECHO SUPPRESSED', `(tts just ended, ${sinceEnded}ms ago)`);
           return;
         }
@@ -813,9 +813,9 @@ function buildTranscript(history) {
           ttsEndedAt = Date.now();
           log(callSid, '✅ GREETING DONE', 'TTS complete — starting STT');
           saveContext(callSid, [{ role: 'assistant', content: greetingText }]).catch(() => {});
-          // Short delay so Twilio finishes playing the last audio chunk before STT opens.
-          // Without this, STT picks up the greeting tail as caller speech.
-          await new Promise(r => setTimeout(r, 800));
+          // Delay so Twilio finishes playing the last audio chunk and CTM STT drains
+          // any buffered audio before we start accepting caller input.
+          await new Promise(r => setTimeout(r, 2000));
           startListening();
         }).catch(err => {
           log(callSid, '⚠ GREETING PROVIDER ERR', err.message);
