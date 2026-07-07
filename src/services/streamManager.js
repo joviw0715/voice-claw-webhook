@@ -337,6 +337,11 @@ function buildTranscript(history) {
           log(callSid, '🔇 ECHO SUPPRESSED', `(tts active, ${sinceLastChunk}ms ago)`);
           return;
         }
+        // Suppress when TTS is in-progress but no chunk recently (e.g. inter-sentence gap or pre-first-chunk)
+        if (ttsEndedAt === 0 && state === 'SPEAKING') {
+          log(callSid, '🔇 ECHO SUPPRESSED', `(tts speaking, no recent chunk)`);
+          return;
+        }
         if (ttsEndedAt > 0 && sinceEnded < 800) {
           log(callSid, '🔇 ECHO SUPPRESSED', `(tts just ended, ${sinceEnded}ms ago)`);
           return;
