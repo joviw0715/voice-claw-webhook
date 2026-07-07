@@ -406,6 +406,12 @@ function adminAuth(req, res, next) {
   const auth = req.headers['authorization'] || '';
   const expected = `Bearer ${serverToken}`;
   if (auth.length === expected.length && timingSafeEqual(Buffer.from(auth), Buffer.from(expected))) return next();
+  // Also accept WEBHOOK_SECRET — already shared between business-console and webhook
+  const webhookSecret = process.env.WEBHOOK_SECRET;
+  if (webhookSecret) {
+    const expectedWs = `Bearer ${webhookSecret}`;
+    if (auth.length === expectedWs.length && timingSafeEqual(Buffer.from(auth), Buffer.from(expectedWs))) return next();
+  }
   // Accept session cookie (browser) — extract vc_session directly without building full dict
   const sessionVal = getSessionCookie(req);
   if (verifySessionCookie(sessionVal)) return next();
