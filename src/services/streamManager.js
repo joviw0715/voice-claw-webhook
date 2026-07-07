@@ -636,15 +636,15 @@ function buildTranscript(history) {
     if (_ttsPlaying || _ttsQueue.length === 0) return;
     const entry = _ttsQueue[0];
     if (!entry.done) return; // synthesis still in progress
-    if (entry.streamed) {
-      // MiniMax: chunks already sent live to Twilio — nothing left to flush
+    if (entry.streamed && entry.chunks.length === 0) {
+      // MiniMax: all chunks were sent live, nothing buffered — just resolve
       _ttsQueue.shift();
       ttsEndedAt = Date.now();
       entry.resolve();
       _flushNextSentence();
       return;
     }
-    // Batch TTS (CTM) or MiniMax that was queued behind another sentence: flush buffer
+    // Flush buffered chunks (CTM, or MiniMax early chunks buffered while queued)
     _ttsPlaying = true;
     _ttsQueue.shift();
     for (const buf of entry.chunks) {
