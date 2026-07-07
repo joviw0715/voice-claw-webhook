@@ -515,19 +515,8 @@ function buildTranscript(history) {
         await speakSentence(filler);
       }
 
-      // For CTM LLM (slow first token ~3s): play an immediate acknowledgment filler
-      // so the caller hears something instead of 5s silence.
-      if (activeLlm.__name === 'ctm' && !llmAborted) {
-        sendClear();
-        state = 'SPEAKING';
-        firstTts = false; // prevent duplicate sendClear when real response arrives
-        const ctmFiller = '係，等等。';
-        log(callSid, '🔊 TTS (ctm filler)', `"${ctmFiller}"`);
-        await speakSentence(ctmFiller);
-        // Return to THINKING so noise during LLM wait doesn't interrupt.
-        // Real LLM response will set state='SPEAKING' via firstTts path below.
-        if (!llmAborted) { state = 'THINKING'; firstTts = true; }
-      }
+      // No filler needed — ambient audio plays continuously so silence isn't perceived.
+      // State stays 'THINKING' so user CAN barge in if they want to re-speak.
 
       let lastExtracted = ''; // dedup: skip if same Chinese suffix extracted twice in a row
       for await (const tok of llmStream) {
@@ -821,6 +810,9 @@ function buildTranscript(history) {
           ttsEndedAt = Date.now();
           log(callSid, '✅ GREETING DONE', 'TTS complete — starting STT');
           saveContext(callSid, [{ role: 'assistant', content: greetingText }]).catch(() => {});
+          // Short delay so Twilio finishes playing the last audio chunk before STT opens.
+          // Without this, STT picks up the greeting tail as caller speech.
+          await new Promise(r => setTimeout(r, 800));
           startListening();
         }).catch(err => {
           log(callSid, '⚠ GREETING PROVIDER ERR', err.message);
