@@ -316,8 +316,10 @@ function buildTranscript(history) {
     thisStt = sttProvider.createStream({
       onInterim(text) {
         if (stt !== thisStt) return; // superseded by a newer STT session
-        // Only suppress interim during active TTS (not after ttsEndedAt is set)
+        // Suppress echo while TTS is actively playing chunks
         if (ttsEndedAt === 0 && Date.now() - ttsLastChunkAt < 1500) return;
+        // Also suppress when TTS is synthesizing but no chunks sent yet (e.g. first CTM sentence)
+        if (ttsEndedAt === 0 && state === 'SPEAKING') return;
         if ((state === 'SPEAKING' || state === 'THINKING') && text.length >= 2) {
           interrupt(`user interim: "${text.slice(0, 30)}"`);
         }
