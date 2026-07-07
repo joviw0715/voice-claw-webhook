@@ -720,7 +720,6 @@ function buildTranscript(history) {
           }
         // Await provider resolution so greeting uses the configured TTS, not the fallback
         _providersReady.then(async () => {
-          const ttsForGreeting = _ttsProvider ?? getTtsProvider('minimax');
           state = 'SPEAKING';
           log(callSid, '🔊 GREETING', `"${greetingText}" voice=${voiceId}`);
 
@@ -744,24 +743,17 @@ function buildTranscript(history) {
         });
         } else {
         // Inbound: load user memory + wait for providers before greeting
-        Promise.all([getUserMemory(phone).catch(() => null), _providersReady]).then(([memory]) => {
+        Promise.all([getUserMemory(phone).catch(() => null), _providersReady]).then(async ([memory]) => {
             const name = memory?.name;
             const greetingText = paramGreetingText || (name
               ? `你好呀${name}，我係祖兒呀，你今日點呀？`
               : (process.env.FIRST_MESSAGE || '你好，我係祖兒呀，請問點稱呼你呀？'));
-            const ttsForGreeting = _ttsProvider ?? getTtsProvider('minimax');
             state = 'SPEAKING';
             log(callSid, '🔊 GREETING', `"${greetingText}"`);
-            ttsForGreeting.synthesizeToStream(greetingText, {
-              voiceId,
-              onChunk(buf) { sendMedia(buf); },
-              onDone() {
-                ttsEndedAt = Date.now();
-                saveContext(callSid, [{ role: 'assistant', content: greetingText }]).catch(() => {});
-                startListening();
-              },
-              onError(err) { log(callSid, '⚠ GREETING ERR', err.message); startListening(); },
-            });
+            await speakSentence(greetingText);
+            ttsEndedAt = Date.now();
+            saveContext(callSid, [{ role: 'assistant', content: greetingText }]).catch(() => {});
+            startListening();
           }).catch(err => {
             log(callSid, '⚠ GREETING ERR', err.message);
             startListening();

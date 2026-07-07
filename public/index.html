@@ -1002,7 +1002,7 @@ function nav(el) {
   if (view === 'providers') { loadProviders(); }
   if (view === 'config')    { loadConfig(); }
   if (view === 'assistant') { loadAssistant(); }
-  if (view === 'composer')  { initComposer(); }
+  if (view === 'composer')  { renderComposer(); }
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -1081,8 +1081,7 @@ async function loadAllLogs() {
       lastLogTsCount = logs.filter(l => l.ts === lastLogTs).length;
     }
     renderLogs();
-    updateStats();
-  } catch (e) { toast('Failed to load logs: ' + e.message, 'err'); }
+    renderLogs('overview-log');
 }
 
 async function loadNewLogs() {
@@ -1102,7 +1101,7 @@ async function loadNewLogs() {
         lastLogTsCount = (newTs === lastLogTs ? lastLogTsCount : 0) + countAtNewTs;
         lastLogTs = newTs;
         renderLogs();
-        updateStats();
+        renderLogs('overview-log');
       }
     }
   } catch {}
@@ -1160,7 +1159,7 @@ function clearLogs() {
   lastLogTs = null;
   lastLogTsCount = 0;
   renderLogs();
-  updateStats();
+  renderLogs('overview-log');
   toast('Log buffer cleared (local only)');
 }
 
@@ -1263,10 +1262,6 @@ function setLatBadge(id, ms) {
   if (!el) return;
   el.textContent = fmtMs(ms);
   el.className = 'pipeline-latency-badge ' + latClass(ms);
-}
-
-function updateStats() {
-  renderLogs('overview-log');
 }
 
 // ── Providers ─────────────────────────────────────────────────────────────────
@@ -1411,8 +1406,6 @@ async function saveAssistant() {
 
 // ── Composer ──────────────────────────────────────────────────────────────────
 let composerHistory = [];
-
-function initComposer() { renderComposer(); }
 
 function clearComposer() {
   composerHistory = [];
