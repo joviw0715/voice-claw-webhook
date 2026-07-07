@@ -817,10 +817,7 @@ function buildTranscript(history) {
             await p;
           }
 
-          // Delay so Twilio finishes playing the last audio chunk and CTM STT drains
-          // any buffered audio before we start accepting caller input.
-          // Set ttsEndedAt AFTER delay so the 2s suppression window starts from now.
-          await new Promise(r => setTimeout(r, 2000));
+          // greetingEndedAt suppresses echo for 4s after greeting — no separate delay needed.
           ttsEndedAt = Date.now();
           greetingEndedAt = Date.now();
           log(callSid, '✅ GREETING DONE', 'TTS complete — starting STT');
