@@ -137,7 +137,7 @@ async function fetchProviderConfigFromConsole() {
     );
     const data = res.data;
     // Validate shape — a redirect to login returns HTML, not the expected JSON object
-    if (!data || typeof data !== 'object' || !('llm' in data) && !('tts' in data) && !('stt' in data)) {
+    if (!data || typeof data !== 'object' || (!('llm' in data) && !('tts' in data) && !('stt' in data))) {
       console.warn('[providers] unexpected response from console (got non-JSON or login redirect)');
       return null;
     }
