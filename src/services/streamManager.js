@@ -42,7 +42,10 @@ const SYSTEM_PROMPT = process.env.SYSTEM_PROMPT ||
   '你係一個用廣東話嘅 AI 陪伴照護員，你的名字叫祖兒。如果 User memory 有用戶名字就用佢嘅名字稱呼佢；如果唔知名字，對話開始時先有禮貌地問佢點稱呼，然後一直用佢嘅名字。你係語音通話，唔係文字，所以：絕對禁止任何 markdown、bullet point、清單、表格、時間表、數字列表、標題；唔好長篇大論；每次只講一個意思、一句話。規則：全程廣東話，語速慢，句子短，一次一條問；安撫陪伴；唔好每句都叫用戶名字，自然地間中叫一次就夠；分享資訊時用口語講出來，唔好用清單格式；佢嘅問題如果你有背景資料，識答就用口語簡單答；絕對唔好糾正錯誤記憶，用重述或選項式問題；不確定或急症徵象引導搵真人幫手；End Call 前必須有禮貌地跟用戶說再見';
 
 // Sentence delimiters — flush TTS on these boundaries for lower perceived latency
-const SENTENCE_RE = /[。？！\n]/;
+// Also flush on Chinese comma (，) to reduce within-sentence breaks on longer phrases
+const SENTENCE_RE = /[。？！\n，]/;
+// Minimum chars before flushing a sentence — avoids tiny TTS requests that cause gaps
+const MIN_TTS_CHUNK = 8;
 
 // Cantonese + English farewell phrases
 const FAREWELL_RE = /拜拜|再見|掛線|掛電話|掰掰|goodbye|bye/i;
@@ -517,7 +520,7 @@ function buildTranscript(history) {
           sentenceBuf = parts.pop() ?? '';
           for (const part of parts) {
             const sentence = cleanForTts(part);
-            if (sentence.length >= 2 && !llmAborted) {
+            if (sentence.length >= MIN_TTS_CHUNK && !llmAborted) {
               // Only filter thinking tokens for models that produce chain-of-thought (Gemini/Groq)
               if ((activeLlm.__name === 'gemini' || activeLlm.__name === 'groq') && isThinkingText(sentence)) {
                 const chinese = extractChineseSuffix(sentence);
