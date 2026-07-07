@@ -1536,6 +1536,10 @@ function startCallLogPoll(sid) {
           line.style.color = l.level === 'error' ? 'var(--danger)' : l.level === 'warn' ? 'var(--warn)' : 'var(--fg-muted)';
           line.textContent = l.line.replace(/^\[.*?\] \[.*?\] /, '');
           logEl.appendChild(line);
+          // Stop polling once call ends
+          if (l.line.includes('WS CLOSE') || l.line.includes('STREAM STOP')) {
+            clearInterval(callPollTimer); callPollTimer = null;
+          }
         });
         logEl.scrollTop = logEl.scrollHeight;
       }
