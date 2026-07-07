@@ -122,6 +122,7 @@ async function deleteProcessStart(callSid) {
 // ─────────────────────────────────────────────
 
 const PROVIDER_CONFIG_KEY = 'config:providers';
+const ASSISTANT_CONFIG_KEY = 'config:assistant';
 
 async function fetchProviderConfigFromConsole() {
   const consoleUrl = (process.env.CONSOLE_CALLBACK_URL || '').replace(/\/$/, '');
@@ -142,27 +143,47 @@ async function fetchProviderConfigFromConsole() {
 }
 
 async function getProviderConfig() {
-  // Try Redis first (fast path)
+  // Provider selection (llm/tts/stt) — 60s TTL, synced from business-console DB
   const raw = await getClient().get(PROVIDER_CONFIG_KEY);
+  let providers = {};
   if (raw) {
-    try { return JSON.parse(raw); } catch {
+    try { providers = JSON.parse(raw); } catch {
       await getClient().del(PROVIDER_CONFIG_KEY).catch(() => {});
     }
   }
-
-  // Redis miss — fetch from business console DB (source of truth)
-  const config = await fetchProviderConfigFromConsole();
-  if (config) {
-    // 60s TTL: ensures UI changes propagate within one minute even if sync POST fails
-    await getClient().setex(PROVIDER_CONFIG_KEY, 60, JSON.stringify(config));
-    console.log('[providers] rehydrated Redis from console DB:', config);
+  if (!raw) {
+    // Redis miss — fetch from business console DB (source of truth)
+    const config = await fetchProviderConfigFromConsole();
+    if (config) {
+      // 60s TTL: ensures UI changes propagate within one minute even if sync POST fails
+      await getClient().setex(PROVIDER_CONFIG_KEY, 60, JSON.stringify(config));
+      console.log('[providers] rehydrated Redis from console DB:', config);
+      providers = config;
+    }
   }
-  return config ?? {};
+
+  // Assistant config (systemPrompt/firstMessage) — no TTL, not in DB
+  const rawAssistant = await getClient().get(ASSISTANT_CONFIG_KEY);
+  let assistant = {};
+  if (rawAssistant) {
+    try { assistant = JSON.parse(rawAssistant); } catch {
+      await getClient().del(ASSISTANT_CONFIG_KEY).catch(() => {});
+    }
+  }
+
+  return { ...providers, ...assistant };
 }
 
 async function setProviderConfig(config) {
-  // 60s TTL matches getProviderConfig so synced values also expire and re-read from DB
-  await getClient().setex(PROVIDER_CONFIG_KEY, 60, JSON.stringify(config));
+  const { systemPrompt, firstMessage, language, ...providers } = config;
+  // Provider selection: 60s TTL (synced from DB)
+  await getClient().setex(PROVIDER_CONFIG_KEY, 60, JSON.stringify(providers));
+  // Assistant config: no TTL (local-only, not backed by DB)
+  const assistant = { ...(systemPrompt !== undefined && { systemPrompt }), ...(firstMessage !== undefined && { firstMessage }), ...(language !== undefined && { language }) };
+  if (Object.keys(assistant).length > 0) {
+    const existing = await getClient().get(ASSISTANT_CONFIG_KEY).then(r => r ? JSON.parse(r) : {}).catch(() => ({}));
+    await getClient().set(ASSISTANT_CONFIG_KEY, JSON.stringify({ ...existing, ...assistant }));
+  }
 }
 
 // ─────────────────────────────────────────────
