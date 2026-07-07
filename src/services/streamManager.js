@@ -289,6 +289,9 @@ function buildTranscript(history) {
   // ── Interrupt ────────────────────────────────────────────────────────────
 
   function interrupt(reason) {
+    // Don't interrupt while greeting or multi-sentence response is still queued/playing.
+    // This prevents inter-chunk gaps in CTM streaming from triggering false interrupts.
+    if (_ttsQueue.length > 0) return;
     if (state === 'SPEAKING' || state === 'THINKING') {
       log(callSid, '🔇 INTERRUPT', reason);
       sendClear();
