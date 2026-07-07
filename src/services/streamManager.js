@@ -44,8 +44,9 @@ const SYSTEM_PROMPT = process.env.SYSTEM_PROMPT ||
 // Sentence delimiters — flush TTS on these boundaries for lower perceived latency
 // Also flush on Chinese comma (，) to reduce within-sentence breaks on longer phrases
 const SENTENCE_RE = /[。？！\n，]/;
-// Minimum chars before flushing a sentence — avoids tiny TTS requests that cause gaps
-const MIN_TTS_CHUNK = 8;
+// Minimum chars to flush mid-stream — 2 catches short phrases like "再見" (3 chars)
+// Pipelining (resolve on first chunk) prevents gaps regardless of chunk size
+const MIN_TTS_CHUNK = 2;
 
 // Cantonese + English farewell phrases
 const FAREWELL_RE = /拜拜|再見|掛線|掛電話|掰掰|goodbye|bye/i;
@@ -622,20 +623,18 @@ function buildTranscript(history) {
         voiceId,
         onChunk(buf) {
           if (!llmAborted) sendMedia(buf);
-          // Resolve as soon as first audio chunk arrives so the LLM loop can
-          // queue the next TTS request while this one is still streaming.
-          // This pipelines TTS calls and eliminates inter-sentence silence gaps.
+          // Resolve on first chunk so next TTS request starts while this streams (pipelining).
           if (!firstChunk) { firstChunk = true; resolve(); }
         },
-        onDone() { clearTimeout(hangGuard); cancelTts = null; if (!firstChunk) { firstChunk = true; resolve(); } },
-        onError(err) { clearTimeout(hangGuard); log(callSid, '⚠  TTS ERR', err.message); cancelTts = null; if (!firstChunk) resolve(); },
+        onDone() { clearTimeout(hangGuard); if (!firstChunk) { firstChunk = true; resolve(); } },
+        onError(err) { clearTimeout(hangGuard); log(callSid, '⚠  TTS ERR', err.message); if (!firstChunk) resolve(); },
       });
-      cancelTts = () => { clearTimeout(hangGuard); handle.cancel(); if (!firstChunk) { firstChunk = true; resolve(); } };
-      // Safety net: if MiniMax stream hangs with no response, resolve after 45s
+      // Chain cancel: if a previous sentence is still streaming, cancel it too
+      const prevCancel = cancelTts;
+      cancelTts = () => { clearTimeout(hangGuard); prevCancel?.(); handle.cancel(); if (!firstChunk) { firstChunk = true; resolve(); } };
       const hangGuard = setTimeout(() => {
         log(callSid, '⚠  TTS HANG', 'no response in 45s — aborting sentence');
         handle.cancel();
-        cancelTts = null;
         if (!firstChunk) { firstChunk = true; resolve(); }
       }, 45000);
     });
