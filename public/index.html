@@ -959,7 +959,6 @@ async function doLogin() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token }),
-      credentials: 'same-origin',
     });
     if (r.status === 401) {
       inp.style.borderColor = 'var(--danger)';
@@ -979,7 +978,6 @@ async function doLogin() {
 
 async function checkAuth() {
   try {
-    const r = await fetch('/admin/me', { credentials: 'same-origin' });
     const d = await r.json();
     if (d.authed) {
       document.getElementById('auth-indicator').textContent = '● Authenticated';
@@ -1539,7 +1537,6 @@ function startCallLogPoll(sid) {
       const url = lastTs
         ? `/admin/logs?since=${encodeURIComponent(lastTs)}`
         : `/admin/logs`;
-      const r = await fetch(url, { credentials: 'same-origin' });
       if (!r.ok) return;
       const d = await r.json();
       // Server returns ts >= lastTs; skip entries already seen at that timestamp.

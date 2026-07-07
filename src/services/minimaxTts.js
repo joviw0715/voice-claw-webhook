@@ -5,8 +5,7 @@ import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import httpsAgent from '../utils/httpAgent.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const AUDIO_DIR = path.join(__dirname, '..', '..', 'audio');
 
