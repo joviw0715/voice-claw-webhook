@@ -618,17 +618,32 @@ function buildTranscript(history) {
     }
   }
 
-  // Pre-buffer queue: each entry is { chunks: Buffer[], done: bool }
-  // While sentence N plays, sentence N+1 synthesizes into a buffer.
-  // When N finishes, N+1's buffered audio flushes instantly — zero gap.
+  // TTS queue: each entry is { chunks: Buffer[], done: bool, streaming: bool }
+  // - Streaming TTS (MiniMax): chunks sent to Twilio immediately as they arrive,
+  //   but ONLY when this entry is at the head of the queue (current sentence).
+  //   Next sentence's HTTP request fires in background while current streams.
+  // - Batch TTS (CTM): all chunks buffered, then flushed when synthesis completes.
+  // Result: zero overlap, zero gap, MiniMax retains full streaming speed.
   let _ttsQueue = [];
   let _ttsPlaying = false;
+
+  function _isCurrentEntry(entry) {
+    return _ttsQueue.length > 0 && _ttsQueue[0] === entry;
+  }
 
   async function _flushNextSentence() {
     if (_ttsPlaying || _ttsQueue.length === 0) return;
     const entry = _ttsQueue[0];
-    // Wait until synthesis is done before playing (ensures complete audio)
-    if (!entry.done) return;
+    if (!entry.done) return; // synthesis still in progress (batch TTS)
+    if (entry.streaming) {
+      // MiniMax: already streamed directly — just resolve and move to next
+      _ttsQueue.shift();
+      ttsEndedAt = Date.now();
+      entry.resolve();
+      _flushNextSentence();
+      return;
+    }
+    // Batch TTS (CTM): flush buffered chunks now
     _ttsPlaying = true;
     _ttsQueue.shift();
     for (const buf of entry.chunks) {
@@ -638,13 +653,13 @@ function buildTranscript(history) {
     ttsEndedAt = Date.now();
     _ttsPlaying = false;
     entry.resolve();
-    // Play next buffered sentence immediately
     _flushNextSentence();
   }
 
   function speakSentence(text) {
     const activeTts = _ttsProvider ?? getTtsProvider('minimax');
-    const entry = { chunks: [], done: false, resolve: null };
+    const isStreamingTts = activeTts.__name === 'minimax';
+    const entry = { chunks: [], done: false, streaming: isStreamingTts, resolve: null };
     const promise = new Promise((resolve) => { entry.resolve = resolve; });
     _ttsQueue.push(entry);
 
@@ -653,7 +668,16 @@ function buildTranscript(history) {
 
     const handle = activeTts.synthesizeToStream(text, {
       voiceId,
-      onChunk(buf) { if (!llmAborted) entry.chunks.push(buf); },
+      onChunk(buf) {
+        if (llmAborted) return;
+        if (isStreamingTts && _isCurrentEntry(entry)) {
+          // MiniMax + current sentence: stream directly to Twilio (fast path)
+          sendMedia(buf);
+        } else {
+          // Batch TTS or queued sentence: buffer for later
+          entry.chunks.push(buf);
+        }
+      },
       onDone() { clearTimeout(hangGuard); done(); },
       onError(err) { clearTimeout(hangGuard); log(callSid, '⚠  TTS ERR', err.message); done(); },
     });
