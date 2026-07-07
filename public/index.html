@@ -923,20 +923,12 @@
 
 <script>
 // ── State ────────────────────────────────────────────────────────────────────
-const API = '';
 let logs = [];
 let logFilter = 'all';
 let _cachedConfig = null; // env config is a static snapshot — fetch once
 let autoRefreshTimer = null;
 let lastLogTs = null;
 let lastLogTsCount = 0; // how many entries we've already seen at lastLogTs
-
-// ── Auth (cookie-based session) ──────────────────────────────────────────────
-// Browser sends no token — the server reads httpOnly cookie automatically.
-// headers() is kept for future API-client use but sends no Authorization header.
-function headers() {
-  return { 'Content-Type': 'application/json' };
-}
 
 function showLoginModal() {
   const overlay = document.getElementById('login-overlay');
@@ -1044,12 +1036,12 @@ async function loadHealth() {
 
   const checks = await Promise.allSettled([
     fetch(`${API}/health`).then(r => ({ name: 'Webhook', ok: r.ok })),
-    fetch(`${API}/admin/providers`, { headers: headers() }).then(r => {
+    fetch('/admin/providers').then(r => {
       if (r.status === 401) return { name: 'Redis', ok: null, detail: 'Token required' };
       return r.json().then(d => ({ name: 'Redis', ok: !d.error, detail: d.error ? 'Error' : 'Connected' }))
                .catch(() => ({ name: 'Redis', ok: r.ok, detail: r.ok ? 'Connected' : 'Error' }));
     }),
-    fetch(`${API}/admin/config`, { headers: headers() }).then(r => {
+    fetch('/admin/config').then(r => {
       if (r.status === 401) return { name: 'Config', ok: null, detail: 'Token required' };
       return r.json().then(d => ({
         name: 'Config',
@@ -1078,7 +1070,7 @@ async function loadHealth() {
 // ── Logs ─────────────────────────────────────────────────────────────────────
 async function loadAllLogs() {
   try {
-    const r = await fetch(`${API}/admin/logs`, { headers: headers() });
+    const r = await fetch('/admin/logs');
     if (r.status === 401) { showLoginModal(); return; }
     if (!r.ok) { toast('Failed to load logs', 'err'); return; }
     const data = await r.json();
@@ -1095,7 +1087,7 @@ async function loadAllLogs() {
 async function loadNewLogs() {
   if (!lastLogTs) { loadAllLogs(); return; }
   try {
-    const r = await fetch(`${API}/admin/logs?since=${encodeURIComponent(lastLogTs)}`, { headers: headers() });
+    const r = await fetch(`/admin/logs?since=${encodeURIComponent(lastLogTs)}`);
     if (!r.ok) return;
     const data = await r.json();
     // Server returns entries with ts >= lastLogTs; skip the ones we already have at that timestamp.
@@ -1279,7 +1271,7 @@ function updateStats() {
 // ── Providers ─────────────────────────────────────────────────────────────────
 async function loadProviders() {
   try {
-    const r = await fetch(`${API}/admin/providers`, { headers: headers() });
+    const r = await fetch('/admin/providers');
     if (r.status === 401) { showLoginModal(); return; }
     if (!r.ok) { toast('Auth error', 'err'); return; }
     const d = await r.json();
@@ -1306,7 +1298,7 @@ async function saveProviders() {
   st.textContent = 'Saving…';
   try {
     const r = await fetch(`${API}/admin/providers`, {
-      method: 'POST', headers: headers(), body: JSON.stringify(body),
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     });
     const d = await r.json();
     if (d.ok) { st.textContent = '✓ Saved'; toast('Providers updated'); }
@@ -1317,7 +1309,7 @@ async function saveProviders() {
 // ── Config ────────────────────────────────────────────────────────────────────
 async function loadConfig() {
   try {
-    const r = await fetch(`${API}/admin/config`, { headers: headers() });
+    const r = await fetch('/admin/config');
     if (r.status === 401) { showLoginModal(); return; }
     if (!r.ok) { toast('Auth error', 'err'); return; }
     const d = await r.json();
@@ -1418,14 +1410,8 @@ async function saveAssistant() {
 
 // ── Composer ──────────────────────────────────────────────────────────────────
 let composerHistory = [];
-let composerInited = false;
 
-function initComposer() {
-  if (!composerInited) {
-    composerInited = true;
-    renderComposer();
-  }
-}
+function initComposer() { renderComposer(); }
 
 function clearComposer() {
   composerHistory = [];

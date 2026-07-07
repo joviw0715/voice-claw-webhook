@@ -439,10 +439,11 @@ app.get('/admin/me', (req, res) => {
   res.json({ authed });
 });
 
+const parseMs = str => { const m = str.match(/\((\d+)ms\)/); return m ? parseInt(m[1]) : null; };
+const parseTotalMs = str => { const m = str.match(/total=(\d+)ms/); return m ? parseInt(m[1]) : null; };
+
 // ── Admin: stats — parsed from log buffer ────────────────────────────────────
 app.get('/admin/stats', adminAuth, (req, res) => {
-  const parseMs = str => { const m = str.match(/\((\d+)ms\)/); return m ? parseInt(m[1]) : null; };
-  const parseTotalMs = str => { const m = str.match(/total=(\d+)ms/); return m ? parseInt(m[1]) : null; };
 
   const sttTimes = [], llmTimes = [], ttsTimes = [], totalTimes = [];
   const callSids = new Set();

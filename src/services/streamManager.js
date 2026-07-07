@@ -192,14 +192,16 @@ export function createCallHandler(ws, log) {
     }
   }
 
+function buildTranscript(history) {
+  return history.map(m => `${m.role === 'user' ? 'User' : 'Agent'}: ${m.content}`).join('\n');
+}
+
   async function postCallReport() {
     const consoleUrl = (process.env.CONSOLE_CALLBACK_URL || '').replace(/\/$/, '');
     if (!consoleUrl || !contactId || !campaignId) return;
     try {
       const history = await getContext(callSid);
-      const transcript = history
-        .map(m => `${m.role === 'user' ? 'User' : 'Agent'}: ${m.content}`)
-        .join('\n');
+      const transcript = buildTranscript(history);
       const duration_sec = callStartedAt ? Math.round((Date.now() - callStartedAt) / 1000) : null;
       const webhookSecret = process.env.WEBHOOK_SECRET;
       await axios.post(`${consoleUrl}/api/webhooks/call-complete`, {
@@ -224,9 +226,7 @@ export function createCallHandler(ws, log) {
     if (!consoleUrl || !hotlineId) return;
     try {
       const history = await getContext(callSid);
-      const transcript = history
-        .map(m => `${m.role === 'user' ? 'User' : 'Agent'}: ${m.content}`)
-        .join('\n');
+      const transcript = buildTranscript(history);
       const duration_sec = callStartedAt ? Math.round((Date.now() - callStartedAt) / 1000) : null;
       const webhookSecret = process.env.WEBHOOK_SECRET;
       await axios.post(`${consoleUrl}/api/webhooks/inbound/call-end`, {
@@ -579,9 +579,7 @@ export function createCallHandler(ws, log) {
         if (direction === 'inbound') {
           const consoleUrl = (process.env.CONSOLE_CALLBACK_URL || '').replace(/\/$/, '');
           if (consoleUrl && callSid !== 'unknown') {
-            const liveTranscript = newHistory
-              .map(m => `${m.role === 'user' ? 'User' : 'Agent'}: ${m.content}`)
-              .join('\n');
+            const liveTranscript = buildTranscript(newHistory);
             const transcriptSecret = process.env.WEBHOOK_SECRET;
             axios.post(`${consoleUrl}/api/webhooks/inbound/transcript-update`, {
               call_sid: callSid,
