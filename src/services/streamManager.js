@@ -291,8 +291,10 @@ function buildTranscript(history) {
 
   function interrupt(reason) {
     // Don't interrupt while greeting or multi-sentence response is still queued/playing.
-    // This prevents inter-chunk gaps in CTM streaming from triggering false interrupts.
-    if (_ttsQueue.length > 0) return;
+    if (_ttsQueue.length > 0) {
+      log(callSid, '🔇 INTERRUPT BLOCKED', `queue=${_ttsQueue.length} reason=${reason.slice(0,40)}`);
+      return;
+    }
     if (state === 'SPEAKING' || state === 'THINKING') {
       log(callSid, '🔇 INTERRUPT', reason);
       sendClear();
@@ -324,6 +326,9 @@ function buildTranscript(history) {
         if (ttsEndedAt === 0 && Date.now() - ttsLastChunkAt < 1500) return;
         // Also suppress when TTS is synthesizing but no chunks sent yet (e.g. first CTM sentence)
         if (ttsEndedAt === 0 && state === 'SPEAKING') return;
+        // Suppress for 4s after greeting ends
+        if (greetingEndedAt > 0 && Date.now() - greetingEndedAt < 4000) return;
+        log(callSid, '👂 STT INTERIM', `"${text.slice(0,30)}" state=${state} ttsEnded=${ttsEndedAt > 0} queueLen=${_ttsQueue.length}`);
         if ((state === 'SPEAKING' || state === 'THINKING') && text.length >= 2) {
           interrupt(`user interim: "${text.slice(0, 30)}"`);
         }
@@ -660,12 +665,14 @@ function buildTranscript(history) {
       // MiniMax: all chunks were sent live, nothing buffered — just resolve
       _ttsQueue.shift();
       // Only mark TTS ended when there are no more sentences queued
-      if (_ttsQueue.length === 0) ttsEndedAt = Date.now();
+      if (_ttsQueue.length === 0) { ttsEndedAt = Date.now(); log(callSid, '🎵 TTS DONE (streamed)', `queueNow=0`); }
+      else { log(callSid, '🎵 TTS NEXT', `queueNow=${_ttsQueue.length} nextDone=${_ttsQueue[0]?.done}`); }
       entry.resolve();
       _flushNextSentence();
       return;
     }
     // Flush buffered chunks (CTM, or MiniMax early chunks buffered while queued)
+    log(callSid, '🎵 TTS FLUSH', `chunks=${entry.chunks.length} queueRemaining=${_ttsQueue.length - 1}`);
     _ttsPlaying = true;
     _ttsQueue.shift();
     for (const buf of entry.chunks) {
@@ -689,6 +696,7 @@ function buildTranscript(history) {
     const entry = { chunks: [], done: false, streamed: false, resolve: null };
     const promise = new Promise((resolve) => { entry.resolve = resolve; });
     _ttsQueue.push(entry);
+    log(callSid, '🎵 TTS QUEUE', `"${text.slice(0,30)}" queueLen=${_ttsQueue.length} streaming=${isStreamingTts}`);
 
     let resolved = false;
     const done = () => { if (!resolved) { resolved = true; entry.done = true; _flushNextSentence(); } };
