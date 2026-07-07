@@ -659,10 +659,10 @@ function buildTranscript(history) {
 
   function speakSentence(text) {
     const activeTts = _ttsProvider ?? getTtsProvider('minimax');
-    // MiniMax streams real-time word-sized chunks — safe to send live (each chunk ~100ms audio)
-    // CTM streams large pre-synthesized PCM bursts — buffer and flush so ttsEndedAt reflects
-    // when audio actually finishes playing, not when the last byte was sent
-    const isStreamingTts = activeTts.__name === 'minimax';
+    // Both MiniMax and CTM stream chunks progressively as the synthesizer generates audio.
+    // Since synthesis pace ~= playback pace, by the time the last chunk is sent,
+    // the audio is nearly done — ttsEndedAt set then is accurate within ~100ms.
+    const isStreamingTts = activeTts.__name === 'minimax' || activeTts.__name === 'ctm';
     // streamed=true means chunks were actually sent live (not just that provider can stream)
     const entry = { chunks: [], done: false, streamed: false, resolve: null };
     const promise = new Promise((resolve) => { entry.resolve = resolve; });
