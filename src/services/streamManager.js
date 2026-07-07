@@ -515,6 +515,19 @@ function buildTranscript(history) {
         await speakSentence(filler);
       }
 
+      // For CTM LLM (slow first token ~3s): play an immediate acknowledgment filler
+      // so the caller hears something instead of 5s silence.
+      if (activeLlm.__name === 'ctm' && !llmAborted) {
+        sendClear();
+        state = 'SPEAKING';
+        firstTts = false;
+        const ctmFiller = '係，等等。';
+        log(callSid, '🔊 TTS (ctm filler)', `"${ctmFiller}"`);
+        await speakSentence(ctmFiller);
+        // Return to THINKING after filler so noise during LLM wait doesn't interrupt
+        if (!llmAborted) state = 'THINKING';
+      }
+
       let lastExtracted = ''; // dedup: skip if same Chinese suffix extracted twice in a row
       for await (const tok of llmStream) {
         if (llmAborted) break;
