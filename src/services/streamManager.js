@@ -573,6 +573,7 @@ function buildTranscript(history) {
         if (isErrorResponse(fullReply.trimStart())) {
           log(callSid, '⚠  LLM ERROR RESPONSE', cleanReply.slice(0, 80));
           await speakSentence('唔好意思，我聽唔清楚，可以再講一次嗎？');
+          ttsEndedAt = Date.now();
           state = 'LISTENING';
           return;
         }
