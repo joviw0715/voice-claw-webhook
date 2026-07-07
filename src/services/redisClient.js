@@ -135,7 +135,13 @@ async function fetchProviderConfigFromConsole() {
       `${consoleUrl}/api/admin/providers`,
       { headers: token ? { Authorization: `Bearer ${token}` } : {}, timeout: 3000, httpsAgent },
     );
-    return res.data;
+    const data = res.data;
+    // Validate shape — a redirect to login returns HTML, not the expected JSON object
+    if (!data || typeof data !== 'object' || !('llm' in data) && !('tts' in data) && !('stt' in data)) {
+      console.warn('[providers] unexpected response from console (got non-JSON or login redirect)');
+      return null;
+    }
+    return data;
   } catch (err) {
     console.warn('[providers] failed to fetch from console:', err.message);
     return null;
@@ -147,13 +153,15 @@ async function getProviderConfig() {
   // TTL is a fallback only; the sync POST handles instant propagation.
   const raw = await getClient().get(PROVIDER_CONFIG_KEY);
   let providers = {};
+  let needsRehydration = !raw;
   if (raw) {
     try { providers = JSON.parse(raw); } catch {
       await getClient().del(PROVIDER_CONFIG_KEY).catch(() => {});
+      needsRehydration = true; // parse failed (e.g. HTML stored) — try to self-heal
     }
   }
-  if (!raw) {
-    // Redis miss — try to rehydrate from business console DB
+  if (needsRehydration) {
+    // Redis miss or corrupt — try to rehydrate from business console DB
     const config = await fetchProviderConfigFromConsole();
     if (config) {
       await getClient().setex(PROVIDER_CONFIG_KEY, 3600, JSON.stringify(config));
