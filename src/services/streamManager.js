@@ -688,10 +688,10 @@ function buildTranscript(history) {
 
   function speakSentence(text) {
     const activeTts = _ttsProvider ?? getTtsProvider('minimax');
-    // Both MiniMax and CTM stream chunks progressively as the synthesizer generates audio.
-    // Since synthesis pace ~= playback pace, by the time the last chunk is sent,
-    // the audio is nearly done — ttsEndedAt set then is accurate within ~100ms.
-    const isStreamingTts = activeTts.__name === 'minimax' || activeTts.__name === 'ctm';
+    // Only MiniMax streams real-time word-sized chunks safe for live Twilio delivery.
+    // CTM returns audio in large bursts; streaming it live causes a gap when the burst
+    // ends before the next sentence is ready. Keep CTM in batch mode (buffer then flush).
+    const isStreamingTts = activeTts.__name === 'minimax';
     // streamed=true means chunks were actually sent live (not just that provider can stream)
     const entry = { chunks: [], done: false, streamed: false, resolve: null };
     const promise = new Promise((resolve) => { entry.resolve = resolve; });
