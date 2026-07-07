@@ -780,12 +780,11 @@ function buildTranscript(history) {
           state = 'SPEAKING';
           log(callSid, '🔊 GREETING', `"${greetingText}" voice=${voiceId}`);
 
-          // Split greeting only at true sentence-enders (。？！) — never at commas.
-          // Commas are mid-sentence pauses that TTS handles naturally; splitting there
-          // creates audible gaps. Only split when segments are long enough to benefit
-          // from CTM pre-fetch (>15 chars), otherwise synthesise as one chunk.
-          const rawParts = greetingText.split(/(?<=[。？！])\s*/).filter(p => p.trim().length >= 2);
-          const parts = rawParts.length > 1 && rawParts.every(p => p.trim().length > 15) ? rawParts : [greetingText];
+          // Split greeting at sentence-enders so CTM synthesises sentence 1 while
+          // sentence 2 pre-fetches in parallel — first audio plays in ~2s not ~8s.
+          // Accept any split with ≥2 parts where each part is ≥4 chars.
+          const rawParts = greetingText.split(/(?<=[。？！])\s*/).filter(p => p.trim().length >= 4);
+          const parts = rawParts.length > 1 ? rawParts : [greetingText];
 
           // Fire all speakSentence() calls up-front so sentence N+1 synthesises
           // while sentence N is playing (pre-fetch). speakSentence() is queue-ordered
