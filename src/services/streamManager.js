@@ -520,12 +520,13 @@ function buildTranscript(history) {
       if (activeLlm.__name === 'ctm' && !llmAborted) {
         sendClear();
         state = 'SPEAKING';
-        firstTts = false;
+        firstTts = false; // prevent duplicate sendClear when real response arrives
         const ctmFiller = '係，等等。';
         log(callSid, '🔊 TTS (ctm filler)', `"${ctmFiller}"`);
         await speakSentence(ctmFiller);
-        // Return to THINKING after filler so noise during LLM wait doesn't interrupt
-        if (!llmAborted) state = 'THINKING';
+        // Return to THINKING so noise during LLM wait doesn't interrupt.
+        // Real LLM response will set state='SPEAKING' via firstTts path below.
+        if (!llmAborted) { state = 'THINKING'; firstTts = true; }
       }
 
       let lastExtracted = ''; // dedup: skip if same Chinese suffix extracted twice in a row
