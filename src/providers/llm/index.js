@@ -51,12 +51,12 @@ export async function* streamWithFallback(provider, messages, phone) {
   for (const fb of fallbacks) {
     if (!fb.isAvailable() && fb !== openclaw) continue;
     try {
-      let yielded = false;
+      let fbYielded = false;
       for await (const tok of fb.stream(messages, phone)) {
-        yielded = true;
+        fbYielded = true;
         yield tok;
       }
-      if (yielded) {
+      if (fbYielded) {
         console.warn(`[llm] used fallback: ${fb.__name}`);
         return;
       }
