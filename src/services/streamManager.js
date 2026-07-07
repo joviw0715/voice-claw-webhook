@@ -810,12 +810,12 @@ function buildTranscript(history) {
             await p;
           }
 
-          ttsEndedAt = Date.now();
-          log(callSid, '✅ GREETING DONE', 'TTS complete — starting STT');
-          saveContext(callSid, [{ role: 'assistant', content: greetingText }]).catch(() => {});
           // Delay so Twilio finishes playing the last audio chunk and CTM STT drains
           // any buffered audio before we start accepting caller input.
           await new Promise(r => setTimeout(r, 2000));
+          ttsEndedAt = Date.now();
+          log(callSid, '✅ GREETING DONE', 'TTS complete — starting STT');
+          saveContext(callSid, [{ role: 'assistant', content: greetingText }]).catch(() => {});
           startListening();
         }).catch(err => {
           log(callSid, '⚠ GREETING PROVIDER ERR', err.message);
