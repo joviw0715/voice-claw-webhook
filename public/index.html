@@ -978,6 +978,7 @@ async function doLogin() {
 
 async function checkAuth() {
   try {
+    const r = await fetch('/admin/me');
     const d = await r.json();
     if (d.authed) {
       document.getElementById('auth-indicator').textContent = '● Authenticated';
@@ -1537,6 +1538,7 @@ function startCallLogPoll(sid) {
       const url = lastTs
         ? `/admin/logs?since=${encodeURIComponent(lastTs)}`
         : `/admin/logs`;
+      const r = await fetch(url);
       if (!r.ok) return;
       const d = await r.json();
       // Server returns ts >= lastTs; skip entries already seen at that timestamp.
