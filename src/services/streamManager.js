@@ -839,6 +839,7 @@ function buildTranscript(history) {
             log(callSid, '🔊 GREETING', `"${greetingText}"`);
             await speakSentence(greetingText);
             ttsEndedAt = Date.now();
+            greetingEndedAt = Date.now();
             saveContext(callSid, [{ role: 'assistant', content: greetingText }]).catch(() => {});
             startListening();
           }).catch(err => {

@@ -40,9 +40,22 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
+const xmlEsc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
 const LANGUAGE = process.env.TWILIO_LANGUAGE || 'zh-HK';
 const BASE_URL = (process.env.BASE_URL || '').replace(/\/$/, '');
 const FIRST_MESSAGE = process.env.FIRST_MESSAGE || '你好，我係祖兒呀，請問點稱呼你呀？';
+
+// ponytail: 10s in-process cache for provider config — avoids 2 Redis GETs per utterance
+let _providerConfigCache = null;
+let _providerConfigCacheAt = 0;
+async function getCachedProviderConfig() {
+  if (Date.now() - _providerConfigCacheAt < 10_000) return _providerConfigCache;
+  _providerConfigCache = await getProviderConfig();
+  _providerConfigCacheAt = Date.now();
+  return _providerConfigCache;
+}
+function invalidateProviderConfigCache() { _providerConfigCacheAt = 0; }
 
 // Log CTM config at startup so misconfigurations are immediately visible
 console.log('[startup] CTM config check:');
@@ -127,11 +140,12 @@ app.post("/voice", twilioValidation, (req, res) => {
       .replace(/^https:\/\//, 'wss://')
       .replace(/^http:\/\//, 'ws://') + '/stream';
     // Escape XML attribute special chars so a malformed phone value can't break the TwiML
-    const phoneAttr = phone.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const phoneAttr = xmlEsc(phone);
+    const wsUrlAttr = xmlEsc(wsUrl);
     res.send(`
 <Response>
   <Connect>
-    <Stream url="${wsUrl}">
+    <Stream url="${wsUrlAttr}">
       <Parameter name="phone" value="${phoneAttr}" />
     </Stream>
   </Connect>
@@ -141,11 +155,11 @@ app.post("/voice", twilioValidation, (req, res) => {
     // Legacy record/webhook path
     res.send(`
 <Response>
-  <Say language="${LANGUAGE}">${FIRST_MESSAGE}</Say>
-  <Record action="${BASE_URL}/process" method="POST"
+  <Say language="${LANGUAGE}">${xmlEsc(FIRST_MESSAGE)}</Say>
+  <Record action="${xmlEsc(BASE_URL)}/process" method="POST"
           maxLength="30" timeout="1" playBeep="false"
           trim="trim-silence" />
-  <Redirect>${BASE_URL}/voice</Redirect>
+  <Redirect>${xmlEsc(BASE_URL)}/voice</Redirect>
 </Response>`);
   }
 });
@@ -173,7 +187,7 @@ async function processAsync(callSid, phone, userText) {
     // Use Redis-stored systemPrompt if the admin has overridden it; fall back to env/constant
     let activeSystemPrompt = SYSTEM_PROMPT;
     try {
-      const cfg = await getProviderConfig();
+      const cfg = await getCachedProviderConfig();
       if (cfg.systemPrompt) activeSystemPrompt = cfg.systemPrompt;
     } catch { /* Redis unavailable — use default */ }
 
@@ -380,7 +394,8 @@ const getSessionCookie = (req) => (req.headers.cookie || '').split(';').find(p =
 // Signed session cookie using HMAC-SHA256.
 // Cookie value: base64url(token) + '.' + hex(HMAC-SHA256(base64url(token), secret))
 function signToken(tok) {
-  const secret = getServerToken() || 'voiceclaw';
+  const secret = getServerToken();
+  if (!secret) throw new Error('CONSOLE_API_TOKEN not set');
   const payload = Buffer.from(tok).toString('base64url');
   const mac = createHmac('sha256', secret).update(payload).digest('hex');
   return `${payload}.${mac}`;
@@ -402,7 +417,7 @@ function verifySessionCookie(cookie) {
 
 function adminAuth(req, res, next) {
   const serverToken = getServerToken();
-  if (!serverToken) return next();
+  if (!serverToken) return res.status(401).json({ error: 'CONSOLE_API_TOKEN not set' });
   const auth = req.headers['authorization'] || '';
   const expected = `Bearer ${serverToken}`;
   if (auth.length === expected.length && timingSafeEqual(Buffer.from(auth), Buffer.from(expected))) return next();
@@ -421,13 +436,14 @@ function adminAuth(req, res, next) {
 // ── Admin: login (sets session cookie) ──────────────────────────────────────
 app.post('/admin/login', (req, res) => {
   const serverToken = getServerToken();
+  if (!serverToken) return res.status(503).json({ error: 'CONSOLE_API_TOKEN not set' });
   const { token } = req.body ?? {};
   const supplied = Buffer.from(token ?? '');
   const expected = Buffer.from(serverToken);
-  if (serverToken && !(supplied.length === expected.length && timingSafeEqual(supplied, expected))) {
+  if (!(supplied.length === expected.length && timingSafeEqual(supplied, expected))) {
     return res.status(401).json({ error: 'Invalid token' });
   }
-  const signed = signToken(serverToken || 'dev');
+  const signed = signToken(serverToken);
   const maxAge = 60 * 60 * 24 * 30; // 30 days
   res.setHeader('Set-Cookie', `vc_session=${signed}; HttpOnly; SameSite=Lax; Max-Age=${maxAge}; Path=/; Secure`);
   res.json({ ok: true });
@@ -518,6 +534,7 @@ app.post('/admin/providers', adminAuth, async (req, res) => {
       stt: stt ?? current.stt ?? 'auto',
     };
     await setProviderConfig(updated);
+    invalidateProviderConfigCache();
     console.log(`[admin] providers updated:`, updated);
     res.json({ ok: true, config: updated });
   } catch (err) {
@@ -550,6 +567,7 @@ app.post('/admin/assistant', adminAuth, async (req, res) => {
       ...(language     !== undefined ? { language }     : {}),
     };
     await setProviderConfig(updated);
+    invalidateProviderConfigCache();
     if (firstMessage !== undefined) process.env.FIRST_MESSAGE = firstMessage;
     if (language !== undefined) process.env.TWILIO_LANGUAGE = language;
     console.log('[admin] assistant config updated');
