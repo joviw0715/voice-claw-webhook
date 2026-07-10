@@ -320,7 +320,7 @@ app.post("/poll/:callSid", twilioValidation, async (req, res) => {
     res.send(`
 <Response>
   <Say language="${LANGUAGE}">唔好意思，出咗啲問題，請再試多次。</Say>
-  <Redirect>${BASE_URL}/voice</Redirect>
+  <Redirect>${xmlEsc(BASE_URL)}/voice</Redirect>
 </Response>`);
     return;
   }
@@ -332,11 +332,11 @@ app.post("/poll/:callSid", twilioValidation, async (req, res) => {
   log(callSid, '📤 POLL   ready, sending audio', `${audioUrl}${e2eMs !== null ? ` — e2e=${e2eMs}ms (user finished speaking → audio ready @ ${ttsReadyAt}; add ~1s Twilio playback buffer for real perceived latency)` : ''}`);
   res.type("text/xml");
   res.send(`<Response>
-  <Play>${audioUrl}</Play>
-  <Record action="${BASE_URL}/process" method="POST"
+  <Play>${xmlEsc(audioUrl)}</Play>
+  <Record action="${xmlEsc(BASE_URL)}/process" method="POST"
           maxLength="30" timeout="1" playBeep="false"
           trim="trim-silence" />
-  <Redirect>${BASE_URL}/voice</Redirect>
+  <Redirect>${xmlEsc(BASE_URL)}/voice</Redirect>
 </Response>`);
 });
 

@@ -290,8 +290,8 @@ function buildTranscript(history) {
   // ── Interrupt ────────────────────────────────────────────────────────────
 
   function interrupt(reason) {
-    // Don't interrupt while greeting or multi-sentence response is still queued/playing.
-    if (_ttsQueue.length > 0) return;
+    // Don't interrupt the greeting. After greeting, allow barge-in even mid-queue.
+    if (greetingEndedAt === 0) return;
     if (state === 'SPEAKING' || state === 'THINKING') {
       log(callSid, '🔇 INTERRUPT', reason);
       sendClear();
@@ -715,9 +715,11 @@ function buildTranscript(history) {
       clearTimeout(hangGuard);
       prevCancel?.();
       handle.cancel();
-      _ttsQueue = [];
+      const pending = _ttsQueue.splice(0);
       _ttsPlaying = false;
       done();
+      // resolve all queued promises so awaiting callers don't hang
+      for (const q of pending) q.resolve?.();
     };
     const hangGuard = setTimeout(() => {
       log(callSid, '⚠  TTS HANG', 'no response in 45s — aborting sentence');

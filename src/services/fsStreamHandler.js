@@ -276,7 +276,7 @@ export async function createFsCallHandler(ws, req, log) {
         reply += token;
         ttsBuffer += token;
 
-        if (/[。？！\n]/.test(ttsBuffer)) {
+        if (/[。？！，\n]/.test(ttsBuffer)) {
           const chunk = ttsBuffer.trim();
           ttsBuffer = '';
           if (chunk) await playTts(chunk);
