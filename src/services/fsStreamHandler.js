@@ -6,7 +6,7 @@
 // Workaround: write TTS audio as a .ulaw file served over HTTP, then use FreeSWITCH ESL
 // uuid_broadcast to play it back directly from the host.
 
-import { createWriteStream, unlink } from 'fs';
+import { createWriteStream, unlink, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { decode as mulawDecode } from '../utils/mulaw.js';
@@ -75,6 +75,7 @@ async function eslBroadcast(fsUuid, fileUrl) {
 // Write mulaw chunks as PCM16 WAV so FreeSWITCH mod_http_cache can play it
 function writeMulawWavFile(mulawChunks, filename) {
   return new Promise((resolve, reject) => {
+    mkdirSync(AUDIO_DIR, { recursive: true });
     const filePath = join(AUDIO_DIR, filename);
     const mulaw = Buffer.concat(mulawChunks);
     const pcm = mulawDecode(mulaw);
