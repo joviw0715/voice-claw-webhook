@@ -963,6 +963,7 @@ async function doLogin() {
     document.getElementById('auth-indicator').textContent = '● Authenticated';
     document.getElementById('auth-indicator').style.color = 'var(--accent)';
     await refreshAll();
+    startAutoRefresh();
   } catch (e) {
     errEl.textContent = 'Network error: ' + e.message;
     errEl.style.display = 'block';
