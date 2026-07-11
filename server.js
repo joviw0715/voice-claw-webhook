@@ -247,7 +247,7 @@ app.post("/process", twilioValidation, async (req, res) => {
   if (!recordingUrl) {
     log(callSid, '⚠  NO RECORDING received, looping back');
     res.type("text/xml");
-    res.send(`<Response><Redirect>${BASE_URL}/voice</Redirect></Response>`);
+    res.send(`<Response><Redirect>${xmlEsc(BASE_URL)}/voice</Redirect></Response>`);
     return;
   }
 
@@ -264,7 +264,7 @@ app.post("/process", twilioValidation, async (req, res) => {
     res.send(`
 <Response>
   <Say language="${LANGUAGE}">唔好意思，語音識別出咗問題，請再講多次。</Say>
-  <Redirect>${BASE_URL}/voice</Redirect>
+  <Redirect>${xmlEsc(BASE_URL)}/voice</Redirect>
 </Response>`);
     return;
   }
@@ -273,7 +273,7 @@ app.post("/process", twilioValidation, async (req, res) => {
   if (!userText || !userText.trim()) {
     log(callSid, '⚠  NO SPEECH detected in recording, looping back');
     res.type("text/xml");
-    res.send(`<Response><Redirect>${BASE_URL}/voice</Redirect></Response>`);
+    res.send(`<Response><Redirect>${xmlEsc(BASE_URL)}/voice</Redirect></Response>`);
     return;
   }
 
@@ -288,7 +288,7 @@ app.post("/process", twilioValidation, async (req, res) => {
 <Response>
   <Say language="${LANGUAGE}">係，等我諗吓。</Say>
   <Pause length="12"/>
-  <Redirect>${BASE_URL}/poll/${callSid}</Redirect>
+  <Redirect>${xmlEsc(BASE_URL)}/poll/${xmlEsc(callSid)}</Redirect>
 </Response>`);
 });
 
@@ -306,7 +306,7 @@ app.post("/poll/:callSid", twilioValidation, async (req, res) => {
 <Response>
   <Say language="${LANGUAGE}">再等一陣。</Say>
   <Pause length="3"/>
-  <Redirect>${BASE_URL}/poll/${callSid}</Redirect>
+  <Redirect>${xmlEsc(BASE_URL)}/poll/${xmlEsc(callSid)}</Redirect>
 </Response>`);
     return;
   }
