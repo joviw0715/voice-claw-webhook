@@ -172,7 +172,8 @@ export async function createFsCallHandler(ws, req, log) {
         onDone() { _cancelTts = null; resolve(); },
         onError(err) { log(callSid, '⚠ TTS ERR', err.message); _cancelTts = null; resolve(); },
       });
-      _cancelTts = handle?.cancel ? () => handle.cancel() : null;
+      // Wrap cancel so it always resolves the promise, even if the provider skips onDone/onError
+      _cancelTts = handle?.cancel ? () => { handle.cancel(); resolve(); } : null;
     });
 
     if (!chunks.length) {
