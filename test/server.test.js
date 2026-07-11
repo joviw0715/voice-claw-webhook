@@ -96,3 +96,13 @@ test('GET /audio/nonexistent.wav returns 404', async () => {
   const res = await fetch(`${baseUrl}/audio/totally-nonexistent-file-xyz.wav`);
   assert.strictEqual(res.status, 404);
 });
+
+test('POST /admin/login with numeric token returns 401 not crash', async () => {
+  const { status } = await httpPost('/admin/login', { token: 12345 });
+  assert.strictEqual(status, 401);
+});
+
+test('POST /admin/login with null token returns 401 not crash', async () => {
+  const { status } = await httpPost('/admin/login', { token: null });
+  assert.strictEqual(status, 401);
+});
