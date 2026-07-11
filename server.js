@@ -703,4 +703,6 @@ wss_fs.on('connection', async (ws, req) => {
   ws.on('message', (data, isBinary) => handler.onMessage(data, isBinary));
   ws.on('close', (code, reason) => { clearInterval(pingTimer); handler.onClose(code, reason?.toString() || ''); });
   ws.on('error', (err) => console.error('[ws-fs] error:', err.message));
+  // If ws closed while handler was initializing, fire cleanup now
+  if (ws.readyState !== ws.OPEN) { clearInterval(pingTimer); handler.onClose(1001, 'closed during init'); }
 });
