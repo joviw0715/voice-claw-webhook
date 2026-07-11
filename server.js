@@ -438,7 +438,7 @@ app.post('/admin/login', (req, res) => {
   const serverToken = getServerToken();
   if (!serverToken) return res.status(503).json({ error: 'CONSOLE_API_TOKEN not set' });
   const { token } = req.body ?? {};
-  const supplied = Buffer.from(token ?? '');
+  const supplied = Buffer.from(typeof token === 'string' ? token : '');
   const expected = Buffer.from(serverToken);
   if (!(supplied.length === expected.length && timingSafeEqual(supplied, expected))) {
     return res.status(401).json({ error: 'Invalid token' });
