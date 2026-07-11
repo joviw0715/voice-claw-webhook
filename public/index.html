@@ -1461,7 +1461,11 @@ async function sendComposer() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ messages: msgs, phone }),
     });
-    if (r.status === 401) { showLoginModal(); return; }
+    if (r.status === 401) {
+      const tidx = composerHistory.findLastIndex(m => m.thinking);
+      if (tidx >= 0) { composerHistory[tidx] = { role: 'assistant', content: 'Session expired.' }; renderComposer(); }
+      showLoginModal(); return;
+    }
     const d = await r.json();
     // Replace thinking bubble with real reply
     const idx = composerHistory.findLastIndex(m => m.thinking);
