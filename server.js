@@ -77,6 +77,8 @@ function log(callSid, step, detail = '') {
 // Tracks callSids we've already set up to detect Twilio webhook retries.
 // On retry: skip the greeting but still return stream TwiML so the stream can reconnect.
 const recentCalls = new Map(); // callSid → timestamp
+// ponytail: periodic purge so idle servers don't leak; 2min TTL, checked every 5min
+setInterval(() => { const cut = Date.now() - 120000; for (const [sid, ts] of recentCalls) if (ts < cut) recentCalls.delete(sid); }, 300_000).unref();
 
 // POST /call?to=+85212345678  — initiate an outbound call with no timeLimit
 app.post("/call", adminAuth, async (req, res) => {
@@ -118,12 +120,8 @@ app.post("/voice", twilioValidation, (req, res) => {
   }
 
   // Detect Twilio webhook retries (same CallSid within 30s) — skip greeting on reconnect
-  const now = Date.now();
   const isRetry = recentCalls.has(callSid);
-  recentCalls.set(callSid, now);
-  for (const [sid, ts] of recentCalls) {
-    if (now - ts > 120000) recentCalls.delete(sid);
-  }
+  recentCalls.set(callSid, Date.now());
 
   if (isRetry) {
     log(callSid, '🔄 RECONNECT /voice (skip greeting)', `from ${phone}`);

@@ -1062,9 +1062,9 @@ async function loadHealth() {
     const item = document.createElement('div');
     item.className = 'health-item';
     item.innerHTML = `
-      <div class="health-name">${d.name}</div>
+      <div class="health-name">${escHtml(d.name)}</div>
       <div class="health-status ${cls}">${label}</div>
-      ${d.detail ? `<div style="font-size:11px;color:var(--fg-dim)">${d.detail}</div>` : ''}`;
+      ${d.detail ? `<div style="font-size:11px;color:var(--fg-dim)">${escHtml(d.detail)}</div>` : ''}`;
     grid.appendChild(item);
   });
 }
@@ -1281,9 +1281,14 @@ async function loadProviders() {
 
 function fillSelect(id, options, current) {
   const sel = document.getElementById(id);
-  sel.innerHTML = options.map(o =>
-    `<option value="${o}"${o === current ? ' selected' : ''}>${o}</option>`
-  ).join('');
+  sel.innerHTML = '';
+  options.forEach(o => {
+    const opt = document.createElement('option');
+    opt.value = o;
+    opt.textContent = o;
+    if (o === current) opt.selected = true;
+    sel.appendChild(opt);
+  });
 }
 
 async function saveProviders() {
