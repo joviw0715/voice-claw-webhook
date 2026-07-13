@@ -95,13 +95,13 @@ jobs:
           RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
           if [ -n "$PR_URL" ]; then
-            SUBJECT="Auto-fix ready for review — business-console ($SERVICE)"
+            SUBJECT="Auto-fix ready for review — voice-claw-webhook ($SERVICE)"
             BODY="Service $SERVICE is down. Claude Code created a fix. PR: $PR_URL — merge to redeploy."
           elif [ "$HAS_ERRORS" = "true" ]; then
-            SUBJECT="business-console DOWN — manual fix needed ($SERVICE)"
+            SUBJECT="voice-claw-webhook DOWN — manual fix needed ($SERVICE)"
             BODY="Build errors found but Claude Code could not fix. Actions run: $RUN_URL"
           else
-            SUBJECT="business-console DOWN — runtime issue ($SERVICE)"
+            SUBJECT="voice-claw-webhook DOWN — runtime issue ($SERVICE)"
             BODY="Build passes but service is down. Check Zeabur logs."
           fi
 
